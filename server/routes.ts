@@ -69,49 +69,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Define the event handler function
         const eventHandler = async (...args: any[]) => {
           try {
-            // The last argument is the event log
-            const log = args[args.length - 1];
+            // The last argument is the EventLog object from Ethers.js
+            const eventLogObj = args[args.length - 1] as ethers.EventLog;
 
-            // Parse the log to get event details
-            const parsedLog = contract.interface.parseLog({
-              topics: log.topics,
-              data: log.data
-            });
-
-            if (!parsedLog) {
-              console.error(`[Socket ${socket.id}] Failed to parse log`);
+            if (!eventLogObj || !eventLogObj.topics || !eventLogObj.data) {
+              console.error(`[Socket ${socket.id}] Invalid log object structure`);
               return;
             }
 
+            // Get the event fragment from the ABI
+            const fragment = contract.interface.getEvent(eventFragment.split('(')[0]);
+            if (!fragment) {
+              console.error(`[Socket ${socket.id}] Event fragment not found for: ${eventFragment}`);
+              return;
+            }
+
+            // Decode the event using the fragment
+            const decodedArgs = contract.interface.decodeEventLog(
+              fragment,
+              eventLogObj.data,
+              eventLogObj.topics
+            );
+
             // Format arguments for display
             const logArgs: Record<string, any> = {};
-            parsedLog.args.forEach((val: any, index: number) => {
-              const inputName = parsedLog.fragment.inputs[index]?.name || `arg${index}`;
-              let value = val;
+            fragment.inputs.forEach((input, index) => {
+              let value = decodedArgs[input.name] || decodedArgs[index];
 
               // Convert BigInt to string for JSON serialization
-              if (typeof val === 'bigint') {
-                value = val.toString();
-              } else if (val && typeof val === 'object' && val._isBigNumber) {
-                value = val.toString();
+              if (typeof value === 'bigint') {
+                value = value.toString();
+              } else if (value && typeof value === 'object' && value._isBigNumber) {
+                value = value.toString();
               } else {
-                value = val.toString();
+                value = value?.toString?.() ?? String(value);
               }
 
-              logArgs[inputName] = value;
+              logArgs[input.name] = value;
             });
 
             // Send the rich log data back to the client
-            // Convert BigInt blockNumber to number for JSON serialization
             const eventLog: EventLog = {
-              name: parsedLog.name,
-              blockNumber: Number(log.blockNumber),
-              transactionHash: log.transactionHash,
+              name: fragment.name,
+              blockNumber: Number(eventLogObj.blockNumber),
+              transactionHash: eventLogObj.transactionHash || 'unknown',
               args: logArgs,
               timestamp: new Date().toLocaleTimeString()
             };
 
             socket.emit('newLog', eventLog);
+            console.log(`[Socket ${socket.id}] Event received:`, fragment.name);
           } catch (error) {
             console.error(`[Socket ${socket.id}] Error processing event:`, error);
           }
