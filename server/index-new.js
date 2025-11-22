@@ -100,23 +100,63 @@ app.get('/status', (req, res) => {
 /**
  * Serve frontend (if exists)
  */
-app.use(express.static('../client/dist'));
-app.use(express.static('../public'));
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
 
-// Root endpoint
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Try multiple possible build output locations
+const possiblePaths = [
+  path.join(__dirname, '../dist/public'),
+  path.join(__dirname, '../client/dist'),
+  path.join(__dirname, '../public'),
+];
+
+let distPath = null;
+for (const p of possiblePaths) {
+  if (fs.existsSync(p)) {
+    distPath = p;
+    console.log(`✓ Found frontend build at: ${distPath}`);
+    break;
+  }
+}
+
+if (distPath) {
+  app.use(express.static(distPath));
+}
+
+app.use(express.static(path.join(__dirname, '../public')));
+
+// Fallback: serve index.html for client-side routing
 app.get('/', (req, res) => {
-  res.json({
-    message: 'EVM Event Listener Backend',
-    version: '2.0.0',
-    endpoints: {
-      listen: 'GET /listen?address=0x...&topic0=0x...',
-      status: 'GET /status',
-      health: 'GET /health'
-    },
-    documentation: {
-      listen: 'Stream contract logs via Server-Sent Events'
-    }
-  });
+  if (!distPath) {
+    return res.json({
+      message: 'EVM Event Listener Backend',
+      version: '2.0.0',
+      endpoints: {
+        listen: 'GET /listen?address=0x...&topic0=0x...',
+        status: 'GET /status',
+        health: 'GET /health'
+      },
+      note: 'Frontend build not found. Run: npm run build'
+    });
+  }
+  
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.json({
+      message: 'EVM Event Listener Backend - No frontend index found',
+      version: '2.0.0',
+      endpoints: {
+        listen: 'GET /listen?address=0x...&topic0=0x...',
+        status: 'GET /status',
+        health: 'GET /health'
+      }
+    });
+  }
 });
 
 // Error handling
