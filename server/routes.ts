@@ -69,40 +69,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Define the event handler function
         const eventHandler = async (...args: any[]) => {
           try {
-            // The last argument is the EventLog object from Ethers.js
-            const eventLogObj = args[args.length - 1] as ethers.EventLog;
+            // Ethers.js passes decoded arguments first, then the EventLog as the last argument
+            // We need to find the EventLog object (it has blockNumber, transactionHash, etc.)
+            let eventLogObj: any = null;
+            let decodedArguments: any[] = [];
 
-            if (!eventLogObj || !eventLogObj.topics || !eventLogObj.data) {
-              console.error(`[Socket ${socket.id}] Invalid log object structure`);
+            // Look for the EventLog object
+            for (let i = args.length - 1; i >= 0; i--) {
+              const arg = args[i];
+              if (arg && typeof arg === 'object' && 'blockNumber' in arg && 'transactionHash' in arg) {
+                eventLogObj = arg;
+                decodedArguments = args.slice(0, i);
+                break;
+              }
+            }
+
+            if (!eventLogObj) {
+              console.error(`[Socket ${socket.id}] Could not find EventLog object in arguments`);
+              console.error(`[Socket ${socket.id}] Arguments:`, args.map((a: any) => typeof a));
               return;
             }
 
             // Get the event fragment from the ABI
-            const fragment = contract.interface.getEvent(eventFragment.split('(')[0]);
+            const eventName = eventFragment.split('(')[0];
+            const fragment = contract.interface.getEvent(eventName);
+            
             if (!fragment) {
-              console.error(`[Socket ${socket.id}] Event fragment not found for: ${eventFragment}`);
+              console.error(`[Socket ${socket.id}] Event fragment not found for: ${eventName}`);
               return;
             }
 
-            // Decode the event using the fragment
-            const decodedArgs = contract.interface.decodeEventLog(
-              fragment,
-              eventLogObj.data,
-              eventLogObj.topics
-            );
-
-            // Format arguments for display
+            // Format the decoded arguments for display
             const logArgs: Record<string, any> = {};
             fragment.inputs.forEach((input, index) => {
-              let value = decodedArgs[input.name] || decodedArgs[index];
+              let value = decodedArguments[index];
 
               // Convert BigInt to string for JSON serialization
               if (typeof value === 'bigint') {
                 value = value.toString();
               } else if (value && typeof value === 'object' && value._isBigNumber) {
                 value = value.toString();
-              } else {
-                value = value?.toString?.() ?? String(value);
+              } else if (value !== undefined && value !== null) {
+                value = String(value);
               }
 
               logArgs[input.name] = value;
@@ -111,14 +119,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Send the rich log data back to the client
             const eventLog: EventLog = {
               name: fragment.name,
-              blockNumber: Number(eventLogObj.blockNumber),
-              transactionHash: eventLogObj.transactionHash || 'unknown',
+              blockNumber: Number(eventLogObj.blockNumber || 0),
+              transactionHash: String(eventLogObj.transactionHash || 'unknown'),
               args: logArgs,
               timestamp: new Date().toLocaleTimeString()
             };
 
             socket.emit('newLog', eventLog);
-            console.log(`[Socket ${socket.id}] Event received:`, fragment.name);
+            console.log(`[Socket ${socket.id}] Event received: ${fragment.name}, Args:`, logArgs);
           } catch (error) {
             console.error(`[Socket ${socket.id}] Error processing event:`, error);
           }
