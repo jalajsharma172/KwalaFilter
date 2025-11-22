@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time EVM Event Listener (Socket.IO)</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        /* Custom scrollbar for log area */
+        #log-output::-webkit-scrollbar {
+            width: 8px;
+        }
+        #log-output::-webkit-scrollbar-thumb {
+            background-color: #4f46e5;
+            border-radius: 4px;
+        }
+        #log-output::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        .text-json {
+            font-family: 'Consolas', 'Monaco', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-4 md:p-8 font-sans">
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-extrabold text-indigo-400">EVM Event Log Catcher</h1>
+            <p class="text-gray-400 mt-2">Plug in a contract and event to see real-time blockchain logs via WebSocket.</p>
+        </header>
+
+        <!-- Configuration Panel -->
+        <div id="config-panel" class="bg-gray-800 p-6 rounded-xl shadow-2xl transition-all duration-300">
+            <h2 class="text-2xl font-semibold mb-4 text-indigo-300">Configuration</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Contract Address -->
+                <div>
+                    <label for="contractAddress" class="block text-sm font-medium text-gray-300 mb-1">Contract Address</label>
+                    <input type="text" id="contractAddress" value="0x89e0018a994D581c7e937d4022416f403980a3D6" placeholder="0x..."
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500">
+                    <p class="text-xs text-gray-500 mt-1">Example: A common ERC-20 token address.</p>
+                </div>
+
+                <!-- Event Name -->
+                <div>
+                    <label for="eventName" class="block text-sm font-medium text-gray-300 mb-1">Event Name (Function Signature)</label>
+                    <input type="text" id="eventName" value="Transfer(address,address,uint256)" placeholder="Transfer(address,address,uint256)"
+                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500">
+                    <p class="text-xs text-gray-500 mt-1">Example: `Transfer(address from, address to, uint256 amount)`</p>
+                </div>
+            </div>
+
+            <!-- ABI Input -->
+            <div class="mt-6">
+                <label for="abiInput" class="block text-sm font-medium text-gray-300 mb-1">Contract ABI (JSON Array)</label>
+                <textarea id="abiInput" rows="5" placeholder='[{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Transfer","type":"event"}]'
+                    class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-gray-200 text-json"></textarea>
+                <p class="text-xs text-gray-500 mt-1">The full ABI or at least the relevant event fragment is needed.</p>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                <button id="startListeningBtn" onclick="startListening()"
+                    class="flex-1 w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-150 ease-in-out transform hover:scale-[1.02]">
+                    Start Listening
+                </button>
+                <button id="stopListeningBtn" onclick="stopListening()" disabled
+                    class="flex-1 w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-150 ease-in-out transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed">
+                    Stop Listening
+                </button>
+            </div>
+
+            <!-- Status Message Box -->
+            <div id="status-message" class="mt-4 p-3 rounded-lg bg-yellow-900 border border-yellow-700 text-yellow-300 hidden">
+                Status: Awaiting input...
+            </div>
+        </div>
+
+        <!-- Log Output Panel -->
+        <div class="mt-10">
+            <h2 class="text-2xl font-semibold mb-4 text-indigo-300">Real-Time Event Logs</h2>
+            <div id="log-output" class="bg-gray-800 p-4 h-96 overflow-y-auto rounded-xl border border-gray-700 space-y-4">
+                <p class="text-gray-500 text-center mt-32" id="initial-message">Press "Start Listening" to send the configuration to the server...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Use window.location.host for Replit deployment, or a specific URL if known
+        // Since both FE and BE run on the same Replit deployment, this works well.
+        const SOCKET_URL = window.location.host.includes('replit') ? `https://${window.location.host}` : 'http://localhost:3000';
+        const socket = io(SOCKET_URL); 
+
+        const contractAddressInput = document.getElementById('contractAddress');
+        const abiInput = document.getElementById('abiInput');
+        const eventNameInput = document.getElementById('eventName');
+        const startListeningBtn = document.getElementById('startListeningBtn');
+        const stopListeningBtn = document.getElementById('stopListeningBtn');
+        const logOutput = document.getElementById('log-output');
+        const statusMessage = document.getElementById('status-message');
+        const initialMessage = document.getElementById('initial-message');
+
+        let isListening = false;
+
+        /**
+         * Utility function to display messages in the log area.
+         */
+        function logMessage(text, type, logData = null) {
+            if (initialMessage) initialMessage.classList.add('hidden');
+            
+            const colorClass = {
+                'info': 'text-gray-400',
+                'success': 'text-green-400',
+                'error': 'text-red-400',
+                'log': 'bg-gray-700 p-3 rounded-lg border-l-4 border-indigo-500',
+            }[type] || 'text-white';
+
+            const logEntry = document.createElement('div');
+            logEntry.className = colorClass + ' text-sm';
+            
+            let content = `<span class="font-mono text-gray-500">[${new Date().toLocaleTimeString()}]</span> ${text}`;
+
+            if (logData) {
+                // The logData is already fully processed by the server
+                const txLink = `https://sepolia.etherscan.io/tx/${logData.transactionHash}`;
+                // We use Sepolia as a common default for the link, but this should ideally match the chain configured in the BE
+                const explorerBase = "https://etherscan.io"; // Default for dynamic explorer link
+                
+                content = `
+                    <div class="font-bold text-indigo-400 mb-1">
+                        ✨ ${logData.name} Event Detected
+                    </div>
+                    <div class="text-xs text-json">
+                        <span class="text-gray-400 font-semibold">Block:</span> 
+                        <a href="${explorerBase}/block/${logData.blockNumber}" target="_blank" class="text-blue-400 hover:text-blue-300 transition">${logData.blockNumber}</a>
+                    </div>
+                    <div class="text-xs text-json">
+                        <span class="text-gray-400 font-semibold">Tx Hash:</span> 
+                        <a href="${txLink}" target="_blank" class="text-blue-400 hover:text-blue-300 transition">${logData.transactionHash.substring(0, 10)}...</a>
+                    </div>
+                    <pre class="text-xs mt-1 text-gray-200 text-json overflow-x-auto">${JSON.stringify(logData.args, null, 2)}</pre>
+                `;
+            }
+
+            logEntry.innerHTML = content;
+
+            // Prepend the new log entry
+            if (logOutput.firstChild) {
+                logOutput.insertBefore(logEntry, logOutput.firstChild);
+            } else {
+                logOutput.appendChild(logEntry);
+            }
+        }
+
+        /**
+         * Displays status updates in the dedicated status box.
+         */
+        function setStatus(message, type) {
+            let color = 'bg-yellow-900 border-yellow-700 text-yellow-300';
+            if (type === 'success') color = 'bg-green-900 border-green-700 text-green-300';
+            if (type === 'error') color = 'bg-red-900 border-red-700 text-red-300';
+            if (type === 'info') color = 'bg-gray-700 border-gray-600 text-gray-400';
+
+            statusMessage.textContent = `Status: ${message}`;
+            statusMessage.className = `mt-4 p-3 rounded-lg ${color} border transition-all duration-500`;
+            statusMessage.classList.remove('hidden');
+        }
+
+
+        // --- Socket.IO Event Handlers ---
+        socket.on('connect', () => {
+            logMessage(`Connected to WebSocket server at ${SOCKET_URL}`, 'info');
+            setStatus('Ready to configure and start listening.', 'info');
+        });
+
+        socket.on('disconnect', () => {
+            isListening = false;
+            startListeningBtn.disabled = false;
+            stopListeningBtn.disabled = true;
+            setStatus('Disconnected from the server. Check backend status.', 'error');
+        });
+
+        // Receive status updates from the backend (success/failure messages)
+        socket.on('status', ({ type, message }) => {
+            setStatus(message, type);
+            if (type === 'success') {
+                isListening = true;
+                startListeningBtn.disabled = true;
+                stopListeningBtn.disabled = false;
+            } else if (type === 'error') {
+                isListening = false;
+                startListeningBtn.disabled = false;
+                stopListeningBtn.disabled = true;
+            }
+        });
+
+        // Receive the actual log data from the backend
+        socket.on('newLog', (logData) => {
+            logMessage(`New Log for ${logData.name}`, 'log', logData);
+        });
+
+        // --- Frontend Button Actions ---
+        function startListening() {
+            if (isListening) return;
+
+            const address = contractAddressInput.value.trim();
+            const eventFragment = eventNameInput.value.trim();
+            const abi = abiInput.value.trim();
+
+            if (!address || !eventFragment || !abi) {
+                setStatus("Please fill in all fields (Address, Event, and ABI).", 'error');
+                return;
+            }
+            
+            setStatus("Sending configuration to server...", 'info');
+            
+            // Emit the configuration to the backend to start the listener
+            socket.emit('startListening', { address, eventFragment, abi });
+        }
+
+        function stopListening() {
+            if (!isListening) return;
+
+            // Emit the stop command to the backend
+            socket.emit('stopListening');
+
+            // Update local state immediately
+            isListening = false;
+            startListeningBtn.disabled = false;
+            stopListeningBtn.disabled = true;
+            setStatus('Stopping listener...', 'info');
+        }
+
+        // Initialize connection status on load
+        document.addEventListener('DOMContentLoaded', () => {
+            setStatus('Attempting to connect to the server...', 'info');
+        });
+
+    </script>
+</body>
+</html>

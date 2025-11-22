@@ -1,0 +1,139 @@
+// --- Node.js Backend Server (server.js) ---
+
+// NOTE: This file is designed to run in a Node.js environment (like Replit) 
+// and REQUIRES an .env file with RPC_URL.
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { ethers } from 'ethers';
+import * as dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
+
+const RPC_URL = process.env.RPC_URL;
+if (!RPC_URL) {
+    console.error("FATAL: RPC_URL not found in .env file. Please configure your RPC endpoint.");
+    process.exit(1);
+}
+
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+    cors: {
+        origin: "*", // Allow all origins for development/Replit deployment
+        methods: ["GET", "POST"]
+    }
+});
+const PORT = process.env.PORT || 3000;
+
+// Serve the frontend file statically
+app.use(express.static('public')); 
+
+// Global map to hold active contract listeners, keyed by socket ID
+const activeListeners = new Map();
+const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+
+/**
+ * Removes all Ethers.js listeners associated with a socket.
+ * @param {string} socketId - The ID of the client socket.
+ */
+function removeSocketListeners(socketId) {
+    const listener = activeListeners.get(socketId);
+    if (listener && listener.contract) {
+        // Remove all listeners from the Ethers Contract instance
+        listener.contract.removeAllListeners();
+        console.log(`[Socket ${socketId}] Stopped listening for events.`);
+    }
+    activeListeners.delete(socketId);
+}
+
+io.on('connection', (socket) => {
+    console.log(`[Socket ${socket.id}] Client connected.`);
+    
+    // --- 1. START LISTENING ---
+    socket.on('startListening', async ({ address, eventFragment, abi }) => {
+        // Stop any previous listener for this socket first
+        removeSocketListeners(socket.id);
+
+        try {
+            // Validation (Basic)
+            if (!ethers.utils.isAddress(address)) {
+                throw new Error("Invalid Ethereum address.");
+            }
+            if (!eventFragment) {
+                throw new Error("Event signature cannot be empty.");
+            }
+
+            // Parse ABI and initialize contract
+            const contract = new ethers.Contract(address, JSON.parse(abi), provider);
+            
+            // Define the event handler function
+            const eventHandler = async (/* ...args, log */) => {
+                const log = arguments[arguments.length - 1];
+                
+                // Fetch transaction details to enrich the log data
+                const fullLog = await log.getTransaction();
+
+                // Format arguments for display
+                const parsedLog = contract.interface.parseLog(log);
+                const logArgs = parsedLog.args.reduce((acc, val, index) => {
+                    const name = parsedLog.fragment.inputs[index].name;
+                    let value = val.toString();
+                    if (ethers.BigNumber.isBigNumber(val)) {
+                        value = val.toString(); 
+                    }
+                    acc[name] = value;
+                    return acc;
+                }, {});
+
+                // Send the rich log data back to the client
+                socket.emit('newLog', {
+                    name: parsedLog.name,
+                    blockNumber: log.blockNumber,
+                    transactionHash: log.transactionHash,
+                    args: logArgs,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+            };
+
+            // Start listening on the contract
+            contract.on(eventFragment, eventHandler);
+
+            // Store the active listener
+            activeListeners.set(socket.id, { contract: contract, eventFragment: eventFragment });
+            
+            const currentBlock = await provider.getBlockNumber();
+            socket.emit('status', { 
+                type: 'success', 
+                message: `Listening for ${eventFragment} at ${address} on block ${currentBlock}.` 
+            });
+            console.log(`[Socket ${socket.id}] Listening started: ${eventFragment} on ${address}`);
+
+        } catch (error) {
+            socket.emit('status', { 
+                type: 'error', 
+                message: `Setup failed: ${error.message}. Check inputs and RPC health.` 
+            });
+            console.error(`[Socket ${socket.id}] Listener setup failed:`, error.message);
+        }
+    });
+
+    // --- 2. STOP LISTENING ---
+    socket.on('stopListening', () => {
+        removeSocketListeners(socket.id);
+        socket.emit('status', { type: 'info', message: 'Listener stopped by user command.' });
+    });
+
+    // --- 3. DISCONNECT ---
+    socket.on('disconnect', () => {
+        console.log(`[Socket ${socket.id}] Client disconnected.`);
+        removeSocketListeners(socket.id);
+    });
+});
+
+
+httpServer.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+    console.log(`RPC Provider URL: ${RPC_URL.substring(0, 30)}...`);
+});
