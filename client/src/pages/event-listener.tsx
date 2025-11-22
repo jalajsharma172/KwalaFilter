@@ -24,9 +24,9 @@ export default function EventListener() {
   const form = useForm<ListenerConfig>({
     resolver: zodResolver(listenerConfigSchema),
     defaultValues: {
-      address: "0x89e0018a994D581c7e937d4022416f403980a3D6",
+      address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
       eventFragment: "Transfer(address,address,uint256)",
-      abi: '[{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"Transfer","type":"event"}]',
+      abi: '[{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]',
     },
   });
 
