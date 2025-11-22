@@ -31,10 +31,8 @@ export default function EventListener() {
   });
 
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
-    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(wsUrl, {
+    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
+      path: '/ws',
       transports: ['websocket', 'polling'],
     });
     

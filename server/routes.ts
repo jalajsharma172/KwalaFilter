@@ -102,9 +102,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
 
             // Send the rich log data back to the client
+            // Convert BigInt blockNumber to number for JSON serialization
             const eventLog: EventLog = {
               name: parsedLog.name,
-              blockNumber: log.blockNumber,
+              blockNumber: Number(log.blockNumber),
               transactionHash: log.transactionHash,
               args: logArgs,
               timestamp: new Date().toLocaleTimeString()
