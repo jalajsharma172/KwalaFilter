@@ -209,7 +209,7 @@ export async function startListening(contractAddress, topic0, res) {
         } catch (error) {
           console.error(`❌ Polling error:`, error.message);
         }
-      }, 1000); // Poll every 1 second as requested
+      }, 10000); // Poll every 10 seconds
       
       // Store polling interval for cleanup
       const subscription = { pollInterval };
