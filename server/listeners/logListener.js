@@ -171,32 +171,45 @@ export async function startListening(contractAddress, topic0, res) {
       });
       
     } catch (wsError) {
-      console.warn(`⚠️  WebSocket connection failed, falling back to polling:`, wsError.message);
+      console.warn(`⚠️  WebSocket connection failed, falling back to 1-second block polling:`, wsError.message);
       
       // Fallback to polling if WebSocket fails
+      // Track the current/latest block as the baseline for polling
+      let previousBlock = latestBlock;
+      
       const pollInterval = setInterval(async () => {
         try {
+          // Get latest block number
           const currentBlock = await httpProvider.getBlockNumber();
-          const lastBlock = getLastBlock(contractAddress, topic0);
           
-          if (currentBlock > lastBlock) {
+          console.log(`⏱️  [Poll] Current block: ${currentBlock}, Previous: ${previousBlock}`);
+          
+          // Only fetch logs if block number has changed
+          if (currentBlock > previousBlock) {
+            console.log(`📍 New block(s) detected! Fetching logs from block ${previousBlock + 1} to ${currentBlock}`);
+            
             const newLogs = await fetchHistoricalLogs(
               contractAddress,
               topic0,
-              lastBlock + 1,
+              previousBlock + 1,
               currentBlock
             );
             
+            // Stream any new logs to client
             for (const log of newLogs) {
+              console.log(`📨 Sending event from block ${log.blockNumber}`);
               res.write(`event: log\n`);
               res.write(`data: ${JSON.stringify(log)}\n\n`);
               setLastBlock(contractAddress, topic0, log.blockNumber);
             }
+            
+            // Update previous block for next iteration
+            previousBlock = currentBlock;
           }
         } catch (error) {
-          console.error(`Polling error:`, error.message);
+          console.error(`❌ Polling error:`, error.message);
         }
-      }, 5000); // Poll every 5 seconds
+      }, 1000); // Poll every 1 second as requested
       
       // Store polling interval for cleanup
       const subscription = { pollInterval };
@@ -204,6 +217,7 @@ export async function startListening(contractAddress, topic0, res) {
       
       // Handle client disconnect
       res.on('close', () => {
+        console.log(`🔌 Client disconnected, stopping poll interval`);
         clearInterval(pollInterval);
         activeSubscriptions.delete(listenerKey);
         console.log(`✓ Cleaned up polling interval`);
