@@ -1,95 +1,175 @@
 import { useState, useEffect, useRef } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { listenerConfigSchema, type ListenerConfig, type EventLog } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Activity, StopCircle, PlayCircle, ExternalLink, Zap, Database, Clock } from "lucide-react";
-import { io, Socket } from "socket.io-client";
-import type { ServerToClientEvents, ClientToServerEvents } from "@shared/schema";
+import { Activity, StopCircle, PlayCircle, ExternalLink, Zap, Database, Copy, Check } from "lucide-react";
 
-type StatusType = 'idle' | 'connecting' | 'listening' | 'error';
+type StatusType = 'idle' | 'connecting' | 'listening' | 'catching-up' | 'error';
+
+interface LogEntry {
+  type: 'log' | 'status' | 'error' | 'connected';
+  data: any;
+  timestamp: Date;
+}
 
 export default function EventListener() {
-  const [logs, setLogs] = useState<EventLog[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [status, setStatus] = useState<StatusType>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('Ready to start listening');
-  const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
+  const [address, setAddress] = useState('');
+  const [topic0, setTopic0] = useState('');
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const [copied, setCopied] = useState('');
 
-  const form = useForm<ListenerConfig>({
-    resolver: zodResolver(listenerConfigSchema),
-    defaultValues: {
-      address: "",
-      eventFragment: "",
-      abi: "",
-    },
-  });
-
+  // Cleanup on unmount
   useEffect(() => {
-    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
-      path: '/ws',
-      transports: ['websocket', 'polling'],
-    });
-    
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      setStatus('idle');
-      setStatusMessage('Connected to server. Ready to start listening.');
-    });
-
-    socket.on('disconnect', () => {
-      setStatus('error');
-      setStatusMessage('Disconnected from server');
-    });
-
-    socket.on('status', ({ type, message }) => {
-      setStatusMessage(message);
-      if (type === 'success') {
-        setStatus('listening');
-      } else if (type === 'error') {
-        setStatus('error');
-      } else {
-        setStatus('idle');
-      }
-    });
-
-    socket.on('newLog', (log) => {
-      setLogs((prev) => [log, ...prev]);
-    });
-
     return () => {
-      socket.disconnect();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
     };
   }, []);
 
-  const handleStartListening = (data: ListenerConfig) => {
-    if (!socketRef.current) return;
-    
-    setStatus('connecting');
-    setStatusMessage('Initializing listener...');
+  const handleStartListening = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validate inputs
+    if (!address.trim()) {
+      setStatus('error');
+      setStatusMessage('Please enter a contract address');
+      return;
+    }
+
+    if (!topic0.trim()) {
+      setStatus('error');
+      setStatusMessage('Please enter a topic (topic0)');
+      return;
+    }
+
+    // Validate address format
+    if (!/^0x[a-fA-F0-9]{40}$/i.test(address.trim())) {
+      setStatus('error');
+      setStatusMessage('Invalid address format (should be 0x followed by 40 hex characters)');
+      return;
+    }
+
+    // Validate topic0 format
+    if (!/^0x[a-fA-F0-9]{64}$/i.test(topic0.trim())) {
+      setStatus('error');
+      setStatusMessage('Invalid topic0 format (should be 0x followed by 64 hex characters)');
+      return;
+    }
+
+    // Close existing connection
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
     setLogs([]);
-    
-    socketRef.current.emit('startListening', data);
+    setStatus('connecting');
+    setStatusMessage('Connecting to event stream...');
+
+    try {
+      const url = `/listen?address=${encodeURIComponent(address.trim())}&topic0=${encodeURIComponent(topic0.trim())}`;
+      const eventSource = new EventSource(url);
+      eventSourceRef.current = eventSource;
+
+      eventSource.addEventListener('connected', (e) => {
+        const data = JSON.parse(e.data);
+        setLogs((prev) => [
+          {
+            type: 'connected',
+            data,
+            timestamp: new Date(),
+          },
+          ...prev,
+        ]);
+        setStatus('idle');
+        setStatusMessage('Connected to event stream');
+      });
+
+      eventSource.addEventListener('status', (e) => {
+        const data = JSON.parse(e.data);
+        setLogs((prev) => [
+          {
+            type: 'status',
+            data,
+            timestamp: new Date(),
+          },
+          ...prev,
+        ]);
+
+        if (data.status === 'catching-up') {
+          setStatus('catching-up');
+          setStatusMessage(data.message);
+        } else if (data.status === 'listening') {
+          setStatus('listening');
+          setStatusMessage(data.message);
+        }
+      });
+
+      eventSource.addEventListener('log', (e) => {
+        const data = JSON.parse(e.data);
+        setLogs((prev) => [
+          {
+            type: 'log',
+            data,
+            timestamp: new Date(),
+          },
+          ...prev,
+        ]);
+        setStatus('listening');
+        setStatusMessage('Listening for events');
+      });
+
+      eventSource.addEventListener('error', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setLogs((prev) => [
+            {
+              type: 'error',
+              data,
+              timestamp: new Date(),
+            },
+            ...prev,
+          ]);
+          setStatusMessage(`Error: ${data.error}`);
+        } catch {
+          setStatusMessage('Connection error');
+        }
+        setStatus('error');
+        eventSource.close();
+      });
+
+      eventSource.onerror = () => {
+        setStatus('error');
+        setStatusMessage('Connection lost');
+        eventSource.close();
+      };
+    } catch (error) {
+      setStatus('error');
+      setStatusMessage(error instanceof Error ? error.message : 'Failed to connect');
+    }
   };
 
   const handleStopListening = () => {
-    if (!socketRef.current) return;
-    
-    socketRef.current.emit('stopListening');
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
     setStatus('idle');
-    setStatusMessage('Listener stopped');
+    setStatusMessage('Stopped listening');
   };
 
   const getStatusColor = () => {
     switch (status) {
       case 'listening':
         return 'bg-status-online';
+      case 'catching-up':
+        return 'bg-status-away';
       case 'connecting':
         return 'bg-status-away';
       case 'error':
@@ -103,6 +183,8 @@ export default function EventListener() {
     switch (status) {
       case 'listening':
         return <Badge className="bg-status-online/20 text-status-online border-status-online/30">Listening</Badge>;
+      case 'catching-up':
+        return <Badge className="bg-status-away/20 text-status-away border-status-away/30">Catching Up</Badge>;
       case 'connecting':
         return <Badge className="bg-status-away/20 text-status-away border-status-away/30">Connecting</Badge>;
       case 'error':
@@ -111,6 +193,80 @@ export default function EventListener() {
         return <Badge variant="secondary">Idle</Badge>;
     }
   };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(id);
+    setTimeout(() => setCopied(''), 2000);
+  };
+
+  const formatLogData = (log: LogEntry) => {
+    if (log.type === 'log') {
+      const data = log.data;
+      return (
+        <div className="space-y-2 text-xs font-mono">
+          <div>
+            <span className="text-muted-foreground">Block:</span>{' '}
+            <span className="text-foreground">{data.blockNumber}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Tx Hash:</span>{' '}
+            <code className="text-primary break-all cursor-pointer flex items-center gap-2 group">
+              <span>{data.transactionHash.substring(0, 16)}...</span>
+              <ExternalLink
+                className="h-3 w-3 opacity-0 group-hover:opacity-100 transition"
+                onClick={() =>
+                  window.open(`https://sepolia.etherscan.io/tx/${data.transactionHash}`, '_blank')
+                }
+              />
+            </code>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Address:</span>{' '}
+            <code className="text-foreground break-all">{data.address}</code>
+          </div>
+          {data.topics && data.topics.length > 0 && (
+            <div>
+              <span className="text-muted-foreground">Topics:</span>
+              <div className="ml-2 space-y-1">
+                {data.topics.map((topic: string, idx: number) => (
+                  <div key={idx} className="text-muted-foreground">
+                    [{idx}] <code className="text-foreground text-xs break-all">{topic}</code>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    } else if (log.type === 'status') {
+      return (
+        <div className="text-xs space-y-1">
+          <div>
+            <span className="text-muted-foreground">Status:</span> <span className="text-foreground">{log.data.status}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Message:</span> <span className="text-foreground">{log.data.message}</span>
+          </div>
+        </div>
+      );
+    } else if (log.type === 'error') {
+      return (
+        <div className="text-xs text-red-400">
+          <span className="text-muted-foreground">Error:</span> {log.data.error}
+        </div>
+      );
+    } else if (log.type === 'connected') {
+      return (
+        <div className="text-xs text-green-400">
+          <span className="text-muted-foreground">Connected:</span> {log.data.message}
+        </div>
+      );
+    }
+  };
+
+  const exampleAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+  const exampleTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
   return (
     <div className="min-h-screen bg-background">
@@ -124,7 +280,7 @@ export default function EventListener() {
             </h1>
           </div>
           <p className="text-muted-foreground text-lg" data-testid="text-page-description">
-            Real-time blockchain event monitoring with WebSocket streaming
+            Real-time blockchain event monitoring with Server-Sent Events
           </p>
         </div>
 
@@ -133,8 +289,13 @@ export default function EventListener() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
-                <div className={`h-3 w-3 rounded-full ${getStatusColor()} animate-pulse`} data-testid="indicator-connection-status" />
-                <span className="text-sm font-medium" data-testid="text-status-message">{statusMessage}</span>
+                <div
+                  className={`h-3 w-3 rounded-full ${getStatusColor()} animate-pulse`}
+                  data-testid="indicator-connection-status"
+                />
+                <span className="text-sm font-medium" data-testid="text-status-message">
+                  {statusMessage}
+                </span>
               </div>
               {getStatusBadge()}
             </div>
@@ -149,69 +310,73 @@ export default function EventListener() {
                 <Database className="h-5 w-5 text-primary" />
                 Configuration
               </CardTitle>
-              <CardDescription>
-                Enter contract details to start monitoring events
-              </CardDescription>
+              <CardDescription>Enter contract address and event topic to monitor</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <form onSubmit={form.handleSubmit(handleStartListening)} className="space-y-4">
+              <form onSubmit={handleStartListening} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="address">Contract Address</Label>
                   <Input
                     id="address"
                     data-testid="input-contract-address"
                     placeholder="0x..."
-                    {...form.register("address")}
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
                     className="font-mono"
                   />
-                  {form.formState.errors.address && (
-                    <p className="text-sm text-destructive">{form.formState.errors.address.message}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Ethereum contract address (42 characters)
-                  </p>
+                  <p className="text-xs text-muted-foreground">Ethereum contract address (42 characters: 0x + 40 hex)</p>
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                    onClick={() => copyToClipboard(exampleAddress, 'addr')}
+                  >
+                    {copied === 'addr' ? (
+                      <>
+                        <Check className="h-3 w-3" /> Copied example
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" /> Use example (USDC on Sepolia)
+                      </>
+                    )}
+                  </button>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="eventFragment">Event Signature</Label>
+                  <Label htmlFor="topic0">Event Topic (topic0)</Label>
                   <Input
-                    id="eventFragment"
-                    data-testid="input-event-signature"
-                    placeholder="Transfer(address,address,uint256)"
-                    {...form.register("eventFragment")}
-                    className="font-mono"
+                    id="topic0"
+                    data-testid="input-event-topic"
+                    placeholder="0x..."
+                    value={topic0}
+                    onChange={(e) => setTopic0(e.target.value)}
+                    className="font-mono text-xs"
                   />
-                  {form.formState.errors.eventFragment && (
-                    <p className="text-sm text-destructive">{form.formState.errors.eventFragment.message}</p>
-                  )}
                   <p className="text-xs text-muted-foreground">
-                    Event name with parameter types
+                    Event signature hash (0x + 64 hex characters)
                   </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="abi">Contract ABI</Label>
-                  <Textarea
-                    id="abi"
-                    data-testid="input-contract-abi"
-                    rows={6}
-                    placeholder='[{"anonymous":false,"inputs":[...],"name":"Transfer","type":"event"}]'
-                    {...form.register("abi")}
-                    className="font-mono text-sm resize-none"
-                  />
-                  {form.formState.errors.abi && (
-                    <p className="text-sm text-destructive">{form.formState.errors.abi.message}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Full ABI or event fragment in JSON format
-                  </p>
+                  <button
+                    type="button"
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                    onClick={() => copyToClipboard(exampleTopic, 'topic')}
+                  >
+                    {copied === 'topic' ? (
+                      <>
+                        <Check className="h-3 w-3" /> Copied example
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" /> Use example (Transfer event)
+                      </>
+                    )}
+                  </button>
                 </div>
 
                 <div className="flex gap-3 pt-2">
                   <Button
                     type="submit"
                     data-testid="button-start-listening"
-                    disabled={status === 'listening' || status === 'connecting'}
+                    disabled={status === 'listening' || status === 'catching-up' || status === 'connecting'}
                     className="flex-1"
                   >
                     <PlayCircle className="h-4 w-4 mr-2" />
@@ -221,124 +386,71 @@ export default function EventListener() {
                     type="button"
                     variant="destructive"
                     data-testid="button-stop-listening"
-                    disabled={status !== 'listening'}
+                    disabled={status !== 'listening' && status !== 'catching-up'}
                     onClick={handleStopListening}
-                    className="flex-1"
                   >
                     <StopCircle className="h-4 w-4 mr-2" />
                     Stop
                   </Button>
                 </div>
               </form>
+
+              <div className="rounded-lg bg-muted/50 p-3 space-y-2">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase">Quick Guide</h4>
+                <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                  <li>Find contract address on block explorer (Etherscan)</li>
+                  <li>Get event topic by hashing: keccak256("EventName(type1,type2,...)")</li>
+                  <li>Click "Start Listening" to begin monitoring</li>
+                  <li>Logs appear in real-time as events are emitted</li>
+                </ul>
+              </div>
             </CardContent>
           </Card>
 
-          {/* Real-time Logs Panel */}
-          <Card className="lg:row-span-2">
+          {/* Event Logs Panel */}
+          <Card className="flex flex-col">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-primary" />
                 Event Logs
-                <Badge variant="secondary" className="ml-auto" data-testid="text-log-count">
-                  {logs.length} events
-                </Badge>
               </CardTitle>
-              <CardDescription>
-                Real-time blockchain events as they occur
-              </CardDescription>
+              <CardDescription>{logs.length} events captured</CardDescription>
             </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[600px] pr-4">
-                {logs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-[500px] text-center space-y-3">
-                    <Activity className="h-16 w-16 text-muted-foreground/50" />
-                    <p className="text-muted-foreground text-sm" data-testid="text-empty-state">
-                      No events yet. Start listening to see real-time logs.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {logs.map((log, index) => (
-                      <Card key={`${log.transactionHash}-${index}`} className="hover-elevate" data-testid={`card-event-log-${index}`}>
-                        <CardContent className="pt-4 space-y-3">
-                          <div className="flex items-start justify-between gap-2 flex-wrap">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <Zap className="h-4 w-4 text-primary" />
-                                <span className="font-semibold text-primary" data-testid={`text-event-name-${index}`}>
-                                  {log.name}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <Clock className="h-3 w-3" />
-                                <span data-testid={`text-event-timestamp-${index}`}>{log.timestamp}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-muted-foreground">Block:</span>
-                              <a
-                                href={`https://etherscan.io/block/${log.blockNumber}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-mono text-primary hover:underline flex items-center gap-1"
-                                data-testid={`link-block-${index}`}
-                              >
-                                {log.blockNumber}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <span className="text-muted-foreground">Tx Hash:</span>
-                              <a
-                                href={`https://etherscan.io/tx/${log.transactionHash}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-mono text-xs text-primary hover:underline flex items-center gap-1"
-                                data-testid={`link-transaction-${index}`}
-                              >
-                                {log.transactionHash.substring(0, 10)}...{log.transactionHash.substring(58)}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </div>
-
-                            <div className="pt-2 border-t">
-                              <span className="text-muted-foreground block mb-2">Arguments:</span>
-                              <pre className="font-mono text-xs bg-muted p-3 rounded-md overflow-x-auto" data-testid={`text-event-args-${index}`}>
-                                {JSON.stringify(log.args, null, 2)}
-                              </pre>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
+            <CardContent className="flex-1 overflow-hidden p-0">
+              <ScrollArea className="h-96">
+                <div className="p-4 space-y-2">
+                  {logs.length === 0 ? (
+                    <div className="flex items-center justify-center h-96 text-muted-foreground text-sm">
+                      No logs yet. Start listening to see events here.
+                    </div>
+                  ) : (
+                    logs.map((log, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg border text-xs ${
+                          log.type === 'log'
+                            ? 'bg-primary/5 border-primary/20'
+                            : log.type === 'status'
+                              ? 'bg-status-away/5 border-status-away/20'
+                              : log.type === 'error'
+                                ? 'bg-status-busy/5 border-status-busy/20'
+                                : 'bg-status-online/5 border-status-online/20'
+                        }`}
+                      >
+                        <div className="text-muted-foreground mb-2">
+                          {log.timestamp.toLocaleTimeString()}
+                          {' '}
+                          {log.type === 'log' && '📨 Event'}
+                          {log.type === 'status' && '📊 Status'}
+                          {log.type === 'error' && '❌ Error'}
+                          {log.type === 'connected' && '✓ Connected'}
+                        </div>
+                        {formatLogData(log)}
+                      </div>
+                    ))
+                  )}
+                </div>
               </ScrollArea>
-            </CardContent>
-          </Card>
-
-          {/* Info Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">How to Use</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <div className="space-y-2">
-                <p className="font-medium text-foreground">1. Enter Contract Details</p>
-                <p>Provide the contract address, event signature, and ABI JSON.</p>
-              </div>
-              <div className="space-y-2">
-                <p className="font-medium text-foreground">2. Start Listening</p>
-                <p>Click "Start Listening" to begin monitoring blockchain events in real-time.</p>
-              </div>
-              <div className="space-y-2">
-                <p className="font-medium text-foreground">3. View Events</p>
-                <p>Events will appear instantly in the logs panel with transaction details.</p>
-              </div>
             </CardContent>
           </Card>
         </div>
