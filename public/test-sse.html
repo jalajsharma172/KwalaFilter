@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EVM Event Listener - SSE Test Client</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Monaco', 'Courier New', monospace;
+      background: #0a0e27;
+      color: #e0e0e0;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      color: #6366f1;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    .controls {
+      background: #1a1f3a;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border: 1px solid #2d3748;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #a0aec0;
+      font-size: 14px;
+    }
+    
+    input {
+      width: 100%;
+      padding: 10px;
+      background: #0a0e27;
+      border: 1px solid #2d3748;
+      color: #e0e0e0;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    
+    input:focus {
+      outline: none;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+    }
+    
+    button {
+      padding: 10px 20px;
+      background: #6366f1;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      margin-right: 10px;
+      transition: background 0.2s;
+    }
+    
+    button:hover {
+      background: #4f46e5;
+    }
+    
+    button:disabled {
+      background: #4b5563;
+      cursor: not-allowed;
+    }
+    
+    .buttons {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .status {
+      padding: 10px 15px;
+      background: #10b981;
+      color: white;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-top: 10px;
+      display: none;
+    }
+    
+    .status.active {
+      display: block;
+    }
+    
+    .status.error {
+      background: #ef4444;
+    }
+    
+    .logs-section {
+      background: #1a1f3a;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 600px;
+    }
+    
+    .logs-header {
+      padding: 15px 20px;
+      background: #0f172a;
+      border-bottom: 1px solid #2d3748;
+      font-weight: bold;
+      color: #6366f1;
+    }
+    
+    .logs-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px 20px;
+      font-size: 12px;
+    }
+    
+    .log-entry {
+      background: #0a0e27;
+      padding: 12px;
+      margin-bottom: 10px;
+      border-left: 3px solid #6366f1;
+      border-radius: 2px;
+      word-break: break-all;
+    }
+    
+    .log-entry.event-log {
+      border-left-color: #10b981;
+    }
+    
+    .log-entry.status-msg {
+      border-left-color: #f59e0b;
+      color: #cbd5e1;
+    }
+    
+    .log-entry.error-msg {
+      border-left-color: #ef4444;
+      color: #fca5a5;
+    }
+    
+    .log-label {
+      color: #a0aec0;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    
+    .log-time {
+      color: #64748b;
+      font-size: 11px;
+      margin-bottom: 5px;
+    }
+    
+    .log-data {
+      color: #e0e0e0;
+      font-size: 11px;
+    }
+    
+    .empty-state {
+      text-align: center;
+      color: #64748b;
+      padding: 40px 20px;
+    }
+    
+    .sample-values {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 EVM Event Listener - SSE Test Client</h1>
+    
+    <div class="controls">
+      <div class="form-group">
+        <label for="address">Contract Address:</label>
+        <input type="text" id="address" placeholder="0x..." value="">
+        <div class="sample-values">Example: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 (USDC on Ethereum)</div>
+      </div>
+      
+      <div class="form-group">
+        <label for="topic0">Event Topic (topic0):</label>
+        <input type="text" id="topic0" placeholder="0x..." value="">
+        <div class="sample-values">Example: 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef (Transfer event)</div>
+      </div>
+      
+      <div class="buttons">
+        <button onclick="startListening()">🎧 Start Listening</button>
+        <button onclick="stopListening()" id="stopBtn" disabled>⏹️ Stop</button>
+        <button onclick="clearLogs()">🧹 Clear Logs</button>
+      </div>
+      
+      <div class="status" id="status"></div>
+    </div>
+    
+    <div class="logs-section">
+      <div class="logs-header">📊 Event Stream</div>
+      <div class="logs-content" id="logs">
+        <div class="empty-state">
+          <p>Enter contract address and event topic, then click "Start Listening"</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let eventSource = null;
+    const logsDiv = document.getElementById('logs');
+    const statusDiv = document.getElementById('status');
+    
+    function log(type, message, data = null) {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      
+      const time = new Date().toLocaleTimeString();
+      const timeEl = document.createElement('div');
+      timeEl.className = 'log-time';
+      timeEl.textContent = time;
+      entry.appendChild(timeEl);
+      
+      const label = document.createElement('div');
+      label.className = 'log-label';
+      label.textContent = message;
+      entry.appendChild(label);
+      
+      if (data) {
+        const dataEl = document.createElement('div');
+        dataEl.className = 'log-data';
+        dataEl.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        entry.appendChild(dataEl);
+      }
+      
+      if (logsDiv.querySelector('.empty-state')) {
+        logsDiv.innerHTML = '';
+      }
+      
+      logsDiv.insertBefore(entry, logsDiv.firstChild);
+      
+      // Limit logs to 100
+      while (logsDiv.children.length > 100) {
+        logsDiv.removeChild(logsDiv.lastChild);
+      }
+    }
+    
+    function startListening() {
+      const address = document.getElementById('address').value.trim();
+      const topic0 = document.getElementById('topic0').value.trim();
+      
+      if (!address || !topic0) {
+        statusDiv.textContent = '❌ Please enter both address and topic0';
+        statusDiv.className = 'status active error';
+        return;
+      }
+      
+      const url = `http://localhost:3000/listen?address=${encodeURIComponent(address)}&topic0=${encodeURIComponent(topic0)}`;
+      
+      log('status-msg', 'Connecting...', url);
+      
+      eventSource = new EventSource(url);
+      
+      eventSource.addEventListener('connected', (e) => {
+        const data = JSON.parse(e.data);
+        log('status-msg', '✓ Connected to event stream', data);
+        statusDiv.textContent = '✓ Connected - Listening for events';
+        statusDiv.className = 'status active';
+        document.getElementById('stopBtn').disabled = false;
+      });
+      
+      eventSource.addEventListener('status', (e) => {
+        const data = JSON.parse(e.data);
+        log('status-msg', `📊 Status: ${data.message}`, data);
+      });
+      
+      eventSource.addEventListener('log', (e) => {
+        const data = JSON.parse(e.data);
+        log('event-log', `📨 Log at block ${data.blockNumber}`, {
+          address: data.address,
+          topics: data.topics,
+          data: data.data,
+          transactionHash: data.transactionHash,
+          blockNumber: data.blockNumber
+        });
+      });
+      
+      eventSource.addEventListener('error', (e) => {
+        const data = JSON.parse(e.data);
+        log('error-msg', '❌ Error from server', data);
+        statusDiv.textContent = `❌ Error: ${data.error}`;
+        statusDiv.className = 'status active error';
+        document.getElementById('stopBtn').disabled = true;
+      });
+      
+      eventSource.onerror = () => {
+        log('error-msg', '❌ Connection lost', 'Check backend server');
+        statusDiv.textContent = '❌ Connection lost';
+        statusDiv.className = 'status active error';
+        document.getElementById('stopBtn').disabled = true;
+      };
+    }
+    
+    function stopListening() {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+        log('status-msg', 'Stopped listening');
+        statusDiv.textContent = 'Stopped';
+        statusDiv.className = 'status active';
+        document.getElementById('stopBtn').disabled = true;
+      }
+    }
+    
+    function clearLogs() {
+      logsDiv.innerHTML = '<div class="empty-state"><p>Logs cleared</p></div>';
+    }
+  </script>
+</body>
+</html>
