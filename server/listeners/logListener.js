@@ -68,16 +68,16 @@ export async function startListening(contractAddress, topic0, res) {
   try {
     // Get creation block or use fallback
     let fromBlock = await getContractCreationBlock(contractAddress);
+      const httpProvider = new ethers.JsonRpcProvider(config.RPC_URL);
     if (!fromBlock) {
       // Fallback: start from 100 blocks ago
-      const httpProvider = new ethers.JsonRpcProvider(config.RPC_URL);
+
       const currentBlock = await httpProvider.getBlockNumber();
       fromBlock = Math.max(0, currentBlock - 100);
       console.log(`⚠️  Using fallback fromBlock: ${fromBlock}`);
     }
     
     // Get latest block
-    const httpProvider = new ethers.JsonRpcProvider(config.RPC_URL);
     const latestBlock = await httpProvider.getBlockNumber();
     
     // Check if we need to catch up
@@ -147,23 +147,28 @@ export async function startListening(contractAddress, topic0, res) {
         }
       };
       
-      // Subscribe to logs
-      wsProvider.on('log', onLog);
-      
+      // Replace 'log' with a valid filter object for listening to logs
+      const filter = {
+        address: contractAddress, // Contract address
+        topics: [topic0], // Event signature (topic0)
+      };
+
+      wsProvider.on(filter, onLog); // Use filter instead of 'log'
+
       // Store subscription for cleanup
       const subscription = { wsProvider, onLog };
       activeSubscriptions.set(listenerKey, subscription);
-      
+
       console.log(`✓ Real-time WebSocket listener attached`);
-      
+
       // Handle client disconnect
       res.on('close', () => {
         console.log(`🔌 Client disconnected from ${listenerKey}`);
-        
+
         // Clean up WebSocket subscription
         const sub = activeSubscriptions.get(listenerKey);
         if (sub) {
-          sub.wsProvider.off('log', sub.onLog);
+          sub.wsProvider.off(filter, sub.onLog); // Use filter for cleanup
           sub.wsProvider.destroy();
           activeSubscriptions.delete(listenerKey);
           console.log(`✓ Cleaned up WebSocket listener`);
@@ -255,4 +260,52 @@ export function cleanupAllSubscriptions() {
   }
   activeSubscriptions.clear();
   console.log(`✓ All subscriptions cleaned up`);
+}
+
+// Decode Ethereum event logs using the ABI
+export function decodeEventLog(log, abi) {
+  try {
+    const iface = new ethers.Interface(abi);
+
+    // Find the event by matching the first topic with the event signature
+    const eventFragment = abi.find((item) => item.type === 'event' && iface.getEventTopic(item) === log.topics[0]);
+    if (!eventFragment) {
+      throw new Error('Event signature not found in ABI.');
+    }
+
+    // Decode the event
+    const decodedLog = iface.decodeEventLog(eventFragment.name, log.data, log.topics);
+
+    // Format the output
+    const output = {
+      eventName: eventFragment.name,
+      blockNumber: log.blockNumber,
+      txHash: log.transactionHash,
+      address: ethers.getAddress(log.address), // Checksummed address
+      args: {},
+    };
+
+    // Populate decoded arguments
+    eventFragment.inputs.forEach((input, index) => {
+      const value = decodedLog[index];
+      if (input.type === 'uint256') {
+        output.args[input.name] = value.toString(); // Convert uint256 to decimal
+      } else if (input.type === 'address') {
+        output.args[input.name] = ethers.getAddress(value); // Checksummed address
+      } else if (input.type.startsWith('bytes')) {
+        output.args[input.name] = ethers.hexlify(value); // Hex representation
+      } else if (input.type.endsWith('[]')) {
+        output.args[input.name] = value.map((item) => item.toString()); // Decode arrays
+      } else {
+        output.args[input.name] = value; // Default case
+      }
+    });
+
+    return output;
+  } catch (error) {
+    return {
+      error: error.message,
+      reason: 'Decoding failed. Ensure the ABI and log data are correct.',
+    };
+  }
 }
