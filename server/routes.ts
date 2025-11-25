@@ -4,6 +4,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { ethers } from "ethers";
 import type { ServerToClientEvents, ClientToServerEvents, EventLog } from "@shared/schema";
 
+
 // Global map to hold active contract listeners, keyed by socket ID
 const activeListeners = new Map<string, {
   contract: ethers.Contract;

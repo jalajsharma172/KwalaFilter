@@ -35,54 +35,68 @@ app.get('/health', (req, res) => {
  * Query parameters:
  *   - address: Contract address (required)
  *   - topic0: Event signature hash (required)
+ *   - abi: Base64-encoded JSON ABI array (required for decoding)
  * 
- * Example: GET /listen?address=0x...&topic0=0x...
+ * Example: GET /listen?address=0x...&topic0=0x...&abi=BASE64
  */
 app.get('/listen', (req, res) => {
-  const { address, topic0 } = req.query;
-  
+  const { address, topic0, abi: abiEncoded } = req.query;
+
   console.log(`\n📥 New listen request:`);
   console.log(`   Address: ${address}`);
   console.log(`   Topic0: ${topic0}`);
-  
-  // Validate parameters
+  console.log(`   ABI (encoded) length: ${abiEncoded ? String(abiEncoded).length : 'none'}`);
+
+  // Validate required parameters
   if (!address || !topic0) {
-    return res.status(400).json({
-      error: 'Missing required parameters: address and topic0'
-    });
+    return res.status(400).json({ error: 'Missing required parameters: address and topic0' });
   }
-  
+  if (!abiEncoded) {
+    return res.status(400).json({ error: 'Missing required parameter: abi (Base64-encoded JSON)' });
+  }
+
   // Validate address format
   if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return res.status(400).json({
-      error: 'Invalid Ethereum address format'
-    });
+    return res.status(400).json({ error: 'Invalid Ethereum address format' });
   }
-  
+
   // Validate topic0 format
   if (!/^0x[a-fA-F0-9]{64}$/.test(topic0)) {
-    return res.status(400).json({
-      error: 'Invalid topic0 format (should be 0x followed by 64 hex characters)'
-    });
+    return res.status(400).json({ error: 'Invalid topic0 format (should be 0x followed by 64 hex characters)' });
   }
-  
+
+  // Decode and parse ABI
+  let parsedAbi = null;
+  try {
+    const abiJsonString = Buffer.from(String(abiEncoded), 'base64').toString('utf8');
+    parsedAbi = JSON.parse(abiJsonString);
+    if (!Array.isArray(parsedAbi)) {
+      return res.status(400).json({ error: 'ABI must decode to a JSON array' });
+    }
+    console.log(`   ABI decoded successfully: ${parsedAbi.length} entries`);
+  } catch (e) {
+    console.error('   ❌ Failed to decode/parse ABI:', e.message);
+    return res.status(400).json({ error: 'Invalid ABI encoding or JSON parse failure' });
+  }
+
   // Set up SSE response headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  
+
   // Send initial connection message
   res.write(`event: connected\n`);
-  res.write(`data: ${JSON.stringify({ 
+  res.write(`data: ${JSON.stringify({
     message: 'Connected to log stream',
     address,
     topic0,
+    abiEntries: parsedAbi.length,
     timestamp: new Date().toISOString()
   })}\n\n`);
-  
-  // Start listening
-  startListening(address, topic0, res);
+
+  // Start listening with decoded ABI
+  startListening(address, topic0, res, parsedAbi);
 });
 
 /**
