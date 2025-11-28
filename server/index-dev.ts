@@ -60,4 +60,19 @@ export async function setupVite(app: Express, server: Server) {
 
 (async () => {
   await runApp(setupVite);
+  // Start the optional scheduler after the app has been set up and listening
+  // so background tasks only run while the server is up.
+  import('./scheduler.ts').then((mod) => {
+    const start = (mod && (mod.default || mod.startScheduler || mod.start)) || null;
+    if (typeof start === 'function') {
+      try {
+        start();
+        console.log('✓ Scheduler started (dev)');
+      } catch (e) {
+        console.warn('Could not start scheduler (dev):', (e && e.message) || e);
+      }
+    }
+  }).catch(() => {
+    // scheduler is optional in some environments
+  });
 })();

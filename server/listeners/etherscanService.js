@@ -7,8 +7,12 @@ import { config } from '../config.js';
  * @param {string} contractAddress - Contract address
  * @returns {Promise<number>} - Block number where contract was created
  */
+
 export async function getContractCreationBlock(contractAddress) {
   try {
+    if(config.ETHERSCAN_API_KEY===undefined){
+      throw new Error("Etherscan API key is missing or invalid.");
+    }
     console.log(`📡 Fetching contract creation block from Etherscan for ${contractAddress}...`);
     
     const url = `https://api.etherscan.io/api?module=contract&action=getcontractcreation&contractaddresses=${contractAddress}&apikey=${config.ETHERSCAN_API_KEY}`;
@@ -31,3 +35,5 @@ export async function getContractCreationBlock(contractAddress) {
     return null;
   }
 }
+
+getContractCreationBlock("0xA31C51DCf4913AE9Dae63254bE9BbE350f7b8ADD");

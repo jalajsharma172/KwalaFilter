@@ -4,7 +4,9 @@ import path from "path";
 import fs from "fs";
 import fetch from 'node-fetch';
 import { startListening, getActiveSubscriptions, cleanupAllSubscriptions } from "./listeners/logListener.js";
+import { getContractLatestBlockNumber } from './listeners/getBlockNumber.js';
 import { config } from './config.js';
+import { log } from "util";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -76,10 +78,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST save subscription to Supabase
   app.post('/api/subscriptions', async (req, res) => {
     // Supabase config presence is validated below; avoid logging secrets here
-    const { address, topic0, abi, api } = req.body || {};
+    const { address,blocknumber, topic0,abi,api,params,times,ActionName,ActionType } = req.body || {};
 
     // basic validation
-    if (!address || !topic0 || !abi) {
+    if (!address || !topic0 || !blocknumber) {
       return res.status(400).json({ error: 'Missing required fields: address, topic0, abi' });
     }
 
@@ -111,12 +113,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const insertBody = {
         address: address.toLowerCase(),
-        topic0,
-        abi: parsedAbi,
-        api: api || null,
+        latest_block_number: blocknumber,
+        event_signature: topic0,
+        api:api,
+        params:params,
+        times:times,
+        ActionName:ActionName,
+        ActionType:ActionType
       };
 
-      const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/subscriptions`;
+      const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/subscription_latest_blocks`;
 
       const resp = await fetch(sbUrl, {
         method: 'POST',
@@ -135,6 +141,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(resp.status).json({ error: json });
       }
 
+
+      (async () => {
+        try {
+          const latestBlock = await getContractLatestBlockNumber(address.toLowerCase());
+          if (latestBlock != null) {
+              try {
+              const updateBody = {
+                latest_block_number: latestBlock,
+              };
+                    // Supabase REST API endpoint with filter
+                  const sbUrl2 =
+                `${config.SUPABASE_URL.replace(/\/$/, '')}` +
+                `/rest/v1/subscription_latest_blocks?address=eq.${address.toLowerCase()}`;
+                 const resp2 = await fetch(sbUrl2, {
+                    method: 'PATCH', // IMPORTANT: Use PATCH for update
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+                      'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+                      'Prefer': 'return=representation',
+                    },
+                    body: JSON.stringify(updateBody),
+                  });
+                const json2 = await resp2.json().catch(() => null);
+                if (!resp2.ok) {
+                  console.warn('Could not save latest block to Supabase', resp2.status, json2);
+                } else {
+                  console.log('Saved latest block for', address, '->', latestBlock);
+                }
+              } catch (err) {
+                console.warn('Error saving latest block record:', ((err as any)?.message ?? String(err)));
+              }
+          } else {
+            console.log('No logs found for', address, '- skipping latest block save');
+          }
+        } catch (err) {
+          console.warn('Failed to compute latest block for', address, ((err as any)?.message ?? String(err)));
+        }
+      })();
+
       return res.json({ data: json });
     } catch (err: any) {
       console.error('Error saving subscription to Supabase:', err?.message || err);
@@ -147,6 +193,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ status: 'running', subscriptions: getActiveSubscriptions(), timestamp: new Date().toISOString() });
   });
 
+
+  // app.post('/getlatestblockknumber',(req,res)=>{
+  //   const Address = req.body.contactAddress;
+    
+    
+  //   // console.log("Latest Block Number Received:",latestBlockNumber);
+  //   // res.json({message:"Latest Block Number Received",latestBlockNumber});
+  // });
+
+
   // Serve static public folder
   const __dirname = path.resolve(path.join(process.cwd(), 'server'));
   const publicPath = path.join(__dirname, '..', 'public');
@@ -156,4 +212,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Return the underlying HTTP server so the caller can `listen()`
   return httpServer;
+}
+
+// If this module is executed directly, bootstrap an Express app and start the server
+if (process.argv[1] && process.argv[1].endsWith('routes.ts')) {
+  (async () => {
+    const expressMod = await import('express');
+    const corsMod = await import('cors');
+    const app = expressMod.default();
+    app.use(corsMod.default());
+    app.use(expressMod.json());
+
+    // simple request logger
+    app.use((req, _res, next) => {
+      console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+      next();
+    });
+
+    try {
+      const server = await registerRoutes(app);
+      server.listen(config.PORT, '0.0.0.0', () => {
+        console.log(`\n${'='.repeat(60)}`);
+        console.log(`🚀 EVM Event Listener Backend (routes.ts) Started`);
+        console.log(`${'='.repeat(60)}`);
+        console.log(`📍 Server running on: http://0.0.0.0:${config.PORT}`);
+        console.log(`🌐 Environment: ${config.NODE_ENV}`);
+        console.log(`${'='.repeat(60)}\n`);
+
+        // start optional scheduler (runs background tasks)
+        // scheduler is optional; try dynamic import so runtime can resolve TS/JS
+        import('./scheduler.ts').then((mod) => {
+          if (mod && typeof mod.startScheduler === 'function') {
+            mod.startScheduler();
+          }
+        }).catch((e) => {
+          console.log('No scheduler started (optional):', ((e as any)?.message ?? String(e)));
+        });
+      });
+    } catch (err) {
+      console.error('Failed to start server from routes.ts:', ((err as any)?.message ?? String(err)));
+      process.exit(1);
+    }
+  })();
 }

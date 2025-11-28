@@ -5,7 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
 import { startListening, getActiveSubscriptions, cleanupAllSubscriptions } from './listeners/logListener.js';
-
+import {getContractLatestBlockNumber} from "./listeners/getBlockNumber.js"
 const app = express();
 
 // Middleware
@@ -165,6 +165,44 @@ app.post('/api/subscriptions', async (req, res) => {
       console.error('Supabase insert error', resp.status, json);
       return res.status(resp.status).json({ error: json });
     }
+
+    // attempt to determine latest block for this contract and store it in a separate table
+    (async () => {
+      try {
+        const latestBlock = await getContractLatestBlockNumber(address.toLowerCase());
+        if (latestBlock != null) {
+          try { 
+            const insertBody2 = {
+              address: address.toLowerCase(),
+              latest_block_number: latestBlock,
+            };
+            const sbUrl2 = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/subscription_latest_blocks`;
+            const resp2 = await fetch(sbUrl2, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+                'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+                'Prefer': 'return=representation',
+              },
+              body: JSON.stringify(insertBody2),
+            });
+            const json2 = await resp2.json().catch(() => null);
+            if (!resp2.ok) {
+              console.warn('Could not save latest block to Supabase', resp2.status, json2);
+            } else {
+              console.log('Saved latest block for', address, '->', latestBlock);
+            }
+          } catch (err) {
+            console.warn('Error saving latest block record:', err?.message || err);
+          }
+        } else {
+          console.log('No logs found for', address, '- skipping latest block save');
+        }
+      } catch (err) {
+        console.warn('Failed to compute latest block for', address, err?.message || err);
+      }
+    })();
 
     return res.json({ data: json });
   } catch (err) {

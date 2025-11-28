@@ -29,14 +29,36 @@ export default function EventListener() {
   const [statusMessage, setStatusMessage] = useState<string>('Ready to start listening');//MSG of workflow
   const [address, setAddress] = useState('');//Address
   const [topic0, setTopic0] = useState('');//Event
-  const [abi, setAbi] = useState<string>('');//ABI
-  const [api, setApi] = useState('');//API
-  const [isFormValid, setIsFormValid] = useState(false);
-  const [errors, setErrors] = useState<{ address?: string; topic0?: string; abi?: string; api?: string }>({});
+  const [abi, setAbi] = useState<string>('');//ABI 
+  const [latestBlockNumber, setLatestBlockNumber] = useState(''); // ✅ ADDED
+  // Action fields
+  const [actionName, setActionName] = useState('');
+  const [actionType, setActionType] = useState('POST');
+  const [actionEndpoint, setActionEndpoint] = useState('');
+  const [actionPayload, setActionPayload] = useState('{}');
+  const [actionRetries, setActionRetries] = useState<number | ''>(5);
+  // Smart-contract action fields
+  const [targetContract, setTargetContract] = useState('');
+  const [targetFunction, setTargetFunction] = useState('');
+  const [chainId, setChainId] = useState('11155111');
+  const [targetParams, setTargetParams] = useState('');
+  const [isFormValid, setIsFormValid] = useState(false); 
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [copied, setCopied] = useState('');
+
+//error
+const [errors, setErrors] = useState<{
+  address?: string;
+  topic0?: string;
+  abi?: string;
+  api?: string;
+  latestBlockNumber?: string;      // ✅ ADD THIS
+}>({});
+ 
+
+
 
   // Cleanup on unmount
   useEffect(() => {
@@ -84,7 +106,7 @@ export default function EventListener() {
 
     try {
       const abiBase64 = btoa(abi.trim());
-      const url = `/listen?address=${encodeURIComponent(address.trim())}&topic0=${encodeURIComponent(topic0.trim())}&abi=${encodeURIComponent(abiBase64)}&api=${encodeURIComponent(api.trim())}`;
+      const url = `/listen?address=${encodeURIComponent(address.trim())}&topic0=${encodeURIComponent(topic0.trim())}&abi=${encodeURIComponent(abiBase64)}&api=${encodeURIComponent(actionEndpoint.trim())}`;
       const eventSource = new EventSource(url);
 
     console.log("EVENT");
@@ -181,39 +203,63 @@ export default function EventListener() {
     }
   };
 
-  const validateInputs = (): { ok: boolean; errors: { address?: string; topic0?: string; abi?: string; api?: string } } => {
-    const addr = address.trim();
-    const tp = topic0.trim();
-    const ab = abi.trim();
-    const ap = api.trim();
-    const out: { address?: string; topic0?: string; abi?: string; api?: string } = {};
-
-    if (!addr) out.address = 'Please enter a contract address';
-    else if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) out.address = 'Invalid address format (0x + 40 hex chars)';
-
-    if (!tp) out.topic0 = 'Please enter a topic (topic0)';
-    else if (!/^0x[a-fA-F0-9]{64}$/.test(tp)) out.topic0 = 'Invalid topic0 format (0x + 64 hex chars)';
-
-    if (!ab) out.abi = 'Please enter the contract ABI';
-    else {
-      try {
-        const parsed = JSON.parse(ab);
-        if (!Array.isArray(parsed)) out.abi = 'ABI must be a JSON array';
-      } catch (err) {
-        out.abi = 'ABI is not valid JSON';
-      }
-    }
-
-    if (ap) {
-      try {
-        if (!ap.startsWith('/')) new URL(ap);
-      } catch (err) {
-        out.api = 'API URL is not valid';
-      }
-    }
-
-    return { ok: Object.keys(out).length === 0, errors: out };
+ const validateInputs = (): {
+  ok: boolean;
+  errors: {
+    address?: string;
+    topic0?: string;
+    abi?: string;
+    api?: string;
+    latestBlockNumber?: string;
   };
+} => {
+  const addr = address.trim();
+  const tp = topic0.trim();
+  const ab = abi.trim();
+  const ap = actionEndpoint.trim();
+  const lb = latestBlockNumber.trim();
+
+  const out: {
+    address?: string;
+    topic0?: string;
+    abi?: string;
+    api?: string;
+    latestBlockNumber?: string;
+  } = {};
+
+  if (!addr) out.address = 'Please enter a contract address';
+  else if (!/^0x[a-fA-F0-9]{40}$/.test(addr))
+    out.address = 'Invalid address format (0x + 40 hex chars)';
+
+  if (!tp) out.topic0 = 'Please enter topic0';
+  else if (!/^0x[a-fA-F0-9]{64}$/.test(tp))
+    out.topic0 = 'Invalid topic0 (0x + 64 hex chars)';
+
+  if (!ab) out.abi = 'Please enter ABI';
+  else {
+    try {
+      const parsed = JSON.parse(ab);
+      if (!Array.isArray(parsed)) out.abi = 'ABI must be array';
+    } catch {
+      out.abi = 'ABI JSON invalid';
+    }
+  }
+
+  if (ap) {
+    try {
+      if (!ap.startsWith('/')) new URL(ap);
+    } catch {
+      out.api = 'Invalid API URL';
+    }
+  }
+
+  if (!lb) out.latestBlockNumber = 'Please enter latest block number';
+  else if (isNaN(Number(lb)))
+    out.latestBlockNumber = 'Block number must be number';
+
+  return { ok: Object.keys(out).length === 0, errors: out };
+};
+
 
   const handleTestInputs = (e?: React.MouseEvent) => {
     e?.preventDefault();
@@ -248,9 +294,11 @@ export default function EventListener() {
     setStatusMessage('Saving subscription to server...');
 
     // prepare payload
+    
     let parsedAbi: any = abi;
     try {
       if (typeof abi === 'string') parsedAbi = JSON.parse(abi);
+
     } catch (err) {
       setIsSaving(false);
       setStatus('error');
@@ -262,7 +310,7 @@ export default function EventListener() {
       const resp = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: address.trim(), topic0: topic0.trim(), abi: parsedAbi, api: api?.trim() }),
+        body: JSON.stringify({ address: address.trim(), blocknumber: latestBlockNumber.trim(), topic0: topic0.trim(), abi: parsedAbi, api: actionEndpoint?.trim(),params:actionPayload,times:actionRetries,ActionName:actionName,ActionType:actionType  }),
       });
 
       const json = await resp.json();
@@ -533,6 +581,36 @@ export default function EventListener() {
                   </button>
                 </div>
 
+                
+              <div className="space-y-2">
+                  <Label htmlFor="latestBlockNumber">Latest Block Number</Label>
+                  <Input
+                    id="latestBlockNumber"
+                    data-testid="input-latest-block-number"
+                    placeholder="0x..."
+                    value={latestBlockNumber}
+                    onChange={(e) => { setLatestBlockNumber(e.target.value); setIsFormValid(false); setErrors(prev => ({ ...prev, latestBlockNumber: undefined })); setIsSaved(false); }}
+                    className="font-mono text-xs"
+                  />
+                  {errors.latestBlockNumber && (
+                    <p className="text-xs text-red-400 mt-1">{errors.latestBlockNumber}</p>
+                  )}
+
+              </div>
+              
+
+
+
+
+
+
+                  <p className="text-xs text-muted-foreground">
+                   you need to provide the latest block number.
+                  </p>
+               
+
+                
+
                 <div className="space-y-2">
                   <Label htmlFor="abi">Contract ABI</Label>
                   <textarea
@@ -541,7 +619,7 @@ export default function EventListener() {
                     placeholder="Paste contract ABI here..."
                     value={abi}
                     onChange={(e) => { setAbi(e.target.value); setIsFormValid(false); setErrors(prev => ({ ...prev, abi: undefined })); }}
-                    className="font-mono text-xs w-full h-32"
+                    className="font-mono text-xs w-full h-32 bg-input text-foreground placeholder:text-muted-foreground"
                   />
                   <p className="text-xs text-muted-foreground">
                     Paste the contract ABI (Application Binary Interface) to decode logs.
@@ -549,23 +627,146 @@ export default function EventListener() {
                   {errors.abi && <p className="text-xs text-red-400 mt-1">{errors.abi}</p>}
                 </div>
 
+                
 
 
 
 
-                <div className="space-y-2">
-                  <Label htmlFor="api">POST API</Label>
-                  <Input
-                    id="api"
-                    data-testid="input-post-api"
-                    placeholder="http://localhost:5000/api"
-                    value={api}
-                    onChange={(e) => { setApi(e.target.value); setIsFormValid(false); setErrors(prev => ({ ...prev, api: undefined })); }}
-                    className="font-mono text-xs"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    POST API endpoint URL
-                  </p>
+
+               
+                  {/* Action configuration block */}
+                  <div className="mt-4 p-4 rounded-lg border bg-muted/5">
+                    <h4 className="text-sm font-semibold mb-2">Action 1</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="actionName">Action Name *</Label>
+                        <Input
+                          id="actionName"
+                          placeholder="Enter action name"
+                          value={actionName}
+                          onChange={(e) => setActionName(e.target.value)}
+                          className="font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="actionType">Action Type *</Label>
+                        <select
+                          id="actionType"
+                          value={actionType}
+                          onChange={(e) => setActionType(e.target.value)}
+                          className="w-full rounded-md border bg-input text-foreground text-xs p-2"
+                        >
+                          <option value="POST">POST (API Call)</option>
+                          <option value="CALL">CALL (Smart Contract)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {actionType === 'POST' ? (
+                      <> 
+                        <div className="mt-3">
+                          <Label htmlFor="actionEndpoint">API Endpoint *</Label>
+                          <Input
+                            id="actionEndpoint"
+                            placeholder="https://api.example.com/webhook"
+                            value={actionEndpoint}
+                            onChange={(e) => setActionEndpoint(e.target.value)}
+                            className="font-mono text-xs"
+                          />
+                        </div>
+
+                        <div className="mt-3">
+                          <Label htmlFor="actionPayload">API Payload (JSON) *</Label>
+                          <textarea
+                            id="actionPayload"
+                            placeholder="{}"
+                            value={actionPayload}
+                            onChange={(e) => setActionPayload(e.target.value)}
+                            className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md"
+                          />
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor="actionRetries">Retries Until Success *</Label>
+                            <Input
+                              id="actionRetries"
+                              type="number"
+                              min={0}
+                              value={actionRetries as any}
+                              onChange={(e) => setActionRetries(e.target.value === '' ? '' : Number(e.target.value))}
+                              className="font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      // CALL (Smart Contract) fields
+                      <>
+                        <div className="mt-3">
+                          <Label htmlFor="targetContract">Target Contract *</Label>
+                          <Input
+                            id="targetContract"
+                            placeholder="0x..."
+                            value={targetContract}
+                            onChange={(e) => setTargetContract(e.target.value)}
+                            className="font-mono text-xs"
+                          />
+                        </div>
+
+                        <div className="mt-3">
+                          <Label htmlFor="targetFunction">Target Function *</Label>
+                          <Input
+                            id="targetFunction"
+                            placeholder="function updateNFT(string memory userId, uint256 points)"
+                            value={targetFunction}
+                            onChange={(e) => setTargetFunction(e.target.value)}
+                            className="font-mono text-xs"
+                          />
+                        </div>
+
+                        <div className="mt-3">
+                          <Label htmlFor="chainId">Chain ID *</Label>
+                          <select
+                            id="chainId"
+                            value={chainId}
+                            onChange={(e) => setChainId(e.target.value)}
+                            className="w-full rounded-md border bg-input text-foreground text-xs p-2"
+                          >
+                            <option value="1">Ethereum Mainnet (1)</option>
+                            <option value="11155111">Sepolia (11155111)</option>
+                            <option value="5">Goerli (5)</option>
+                          </select>
+                        </div>
+
+                        <div className="mt-3">
+                          <Label htmlFor="targetParams">Target Parameters (one per line)</Label>
+                          <textarea
+                            id="targetParams"
+                            placeholder="re.event(0)\nre.event(1)"
+                            value={targetParams}
+                            onChange={(e) => setTargetParams(e.target.value)}
+                            className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md"
+                          />
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor="actionRetries">Retries Until Success *</Label>
+                            <Input
+                              id="actionRetries"
+                              type="number"
+                              min={0}
+                              value={actionRetries as any}
+                              onChange={(e) => setActionRetries(e.target.value === '' ? '' : Number(e.target.value))}
+                              className="font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="space-y-2">
                   <Button
                     type="button"
                     data-testid="button-test-inputs"
@@ -575,6 +776,19 @@ export default function EventListener() {
                     <PlayCircle className="h-4 w-4 mr-2" />
                     Test
                   </Button>
+                    
+
+
+
+
+
+
+
+
+
+
+
+
 
                   <Button
                     type="button"
@@ -680,4 +894,6 @@ export default function EventListener() {
       </div>
     </div>
   );
+
+
 }
