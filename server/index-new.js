@@ -111,6 +111,68 @@ app.get('/status', (req, res) => {
   });
 });
 
+// Save subscription to Supabase
+app.post('/api/subscriptions', async (req, res) => {
+  const { address, topic0, abi, api } = req.body || {};
+
+  if (!address || !topic0 || !abi) {
+    return res.status(400).json({ error: 'Missing required fields: address, topic0, abi' });
+  }
+
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: 'Invalid Ethereum address format' });
+  }
+
+  if (!/^0x[a-fA-F0-9]{64}$/.test(topic0)) {
+    return res.status(400).json({ error: 'Invalid topic0 format' });
+  }
+
+  let parsedAbi = abi;
+  try {
+    if (typeof abi === 'string') parsedAbi = JSON.parse(abi);
+    if (!Array.isArray(parsedAbi)) return res.status(400).json({ error: 'ABI must be a JSON array' });
+  } catch (err) {
+    return res.status(400).json({ error: 'ABI is not valid JSON' });
+  }
+
+  if (!config.SUPABASE_URL || !config.SUPABASE_SERVICE_ROLE_KEY) {
+    return res.status(500).json({ error: 'Supabase not configured on server' });
+  }
+
+  try {
+    const insertBody = {
+      address: address.toLowerCase(),
+      topic0,
+      abi: parsedAbi,
+      api: api || null,
+    };
+
+    const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/subscriptions`;
+
+    const resp = await fetch(sbUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+        'Prefer': 'return=representation',
+      },
+      body: JSON.stringify(insertBody),
+    });
+
+    const json = await resp.json();
+    if (!resp.ok) {
+      console.error('Supabase insert error', resp.status, json);
+      return res.status(resp.status).json({ error: json });
+    }
+
+    return res.json({ data: json });
+  } catch (err) {
+    console.error('Error saving subscription to Supabase:', err?.message || err);
+    return res.status(500).json({ error: err?.message || String(err) });
+  }
+});
+
 /**
  * Serve frontend (if exists)
  */
