@@ -44,14 +44,24 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
       const data = await getContractBlockNumber();
 
       for (const item of data) {
-      const contractAddress = item.address?.toLowerCase();
-      const previousBlock = item.latest_block_number;
-      const eventSignature = item.event_signature;
-      const api=item.api;
-      const params=item.params;
-      const times=item.times;
+        const contractAddress = item.address?.toLowerCase();
+        const previousBlock = item.latest_block_number;
+        const eventSignature = item.event_signature;
+        const api=item.api;
+        const params=item.params;
+        const times=item.times;
+        const ActionName=item.ActionName;
+        const ActionType=item.ActionType;
       console.log(contractAddress, previousBlock);
 
+console.log("Params are : ",params);
+
+        const paramsjson =
+  typeof params === "string"
+    ? JSON.parse(params)
+    : params || {};
+
+        
       if (!contractAddress) {
         console.log("❌ Invalid contract address:", item);
         continue;
@@ -91,8 +101,8 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
       // Process the params with dynamic event replacement
       const processedParams = {};
 
-      for (const key in params) {
-        processedParams[key] = applyEventParams(params[key], decodedData);
+      for (const key in paramsjson) {
+        processedParams[key] = applyEventParams(paramsjson[key], decodedData);
       }
 
       console.log("Processed Params:", processedParams);
@@ -127,7 +137,7 @@ try {
       latest_block_number: maxBlockNumber
     };
 
-    const url = `${config.SUPABASE_URL.replace(/\/$/, '')}` +`/rest/v1/subscription_latest_blocks?address=eq.${contractAddress.toLowerCase()}`;
+    const url = `${config.SUPABASE_URL.replace(/\/$/, '')}` +`/rest/v1/subscription_latest_blocks?address=eq.${contractAddress.toLowerCase()}&&event_signature=eq.${eventSignature}`;
     const resp2 = await fetch(url, {
       method: 'PATCH', // IMPORTANT: Use PATCH for update
       headers: {
@@ -139,6 +149,7 @@ try {
       body: JSON.stringify(updateBody),
     });
   const json2 = await resp2.json().catch(() => null);
+
   if (!resp2.ok) {
     console.warn('❌❌❌❌❌❌Could not save latest block to Supabase', resp2.status, json2);
   } else {
@@ -159,14 +170,90 @@ try {
 
 
 
+
+
       
 if(apicall===true){
   //save at database everything worked fine
+      try {
+        const insertBody = {
+          ActionName:ActionName,
+          API_EndPoint:ActionType,
+          ActionStatus:200
+        };
+  
+        const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/Workflow`;
+  
+        const resp = await fetch(sbUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+            'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(insertBody),
+        });
+  
+        const json = await resp.json();
+        if (!resp.ok) {
+          console.error('Supabase insert error',  json); 
+        }
+      }catch (error) {
+        console.error("Unable to insert workflow data:", error);
+      }
+  
+   
+
 }else{
   //show 404 error & Kitne times humne try kiya hai
-  // for(let i=0;i<times;i++){
-  //   //Save it to the database.
-  // }
+    try {
+        for(let i=0;i<times;i++){
+          //Save it to the database.
+
+      try {
+        const insertBody = {
+          ActionName:ActionName,
+          ActionType:ActionType,
+          ActionStatus:404
+        };
+  
+        const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/Workflow`;
+  
+        const resp = await fetch(sbUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+            'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(insertBody),
+        });
+  
+        const json = await resp.json();
+        if (!resp.ok) {
+          console.error('Supabase insert error',  json); 
+        }
+      }catch (error) {
+        console.error("Unable to insert workflow data:", error);
+      }
+
+
+
+
+
+
+
+
+
+
+
+        }
+    } catch (error) {
+      console.log("Error is ",error);
+      
+    }
 }
 
 

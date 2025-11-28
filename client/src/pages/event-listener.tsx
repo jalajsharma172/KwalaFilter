@@ -207,7 +207,7 @@ const [errors, setErrors] = useState<{
   ok: boolean;
   errors: {
     address?: string;
-    topic0?: string;
+    topic0?: string;  
     abi?: string;
     api?: string;
     latestBlockNumber?: string;
@@ -294,11 +294,10 @@ const [errors, setErrors] = useState<{
     setStatusMessage('Saving subscription to server...');
 
     // prepare payload
-    
+    let parsedPayload = {};
     let parsedAbi: any = abi;
     try {
       if (typeof abi === 'string') parsedAbi = JSON.parse(abi);
-
     } catch (err) {
       setIsSaving(false);
       setStatus('error');
@@ -307,10 +306,47 @@ const [errors, setErrors] = useState<{
     }
 
     try {
+  const obj = JSON.parse(actionPayload);
+
+  if (typeof obj !== "object" || Array.isArray(obj) || obj === null) {
+    throw new Error("Payload must be a JSON object.");
+  }
+
+  for (const k in obj) {
+    const v = obj[k];
+    if (
+      v !== null &&
+      typeof v !== "string" &&
+      typeof v !== "number" &&
+      typeof v !== "boolean"
+    ) {
+      throw new Error(
+        `Invalid value type for key "${k}". Only string, number, boolean, null allowed.`
+      );
+    }
+  }
+
+  parsedPayload = obj;
+} catch (err: any) {
+  setStatus("error");
+  setStatusMessage("Invalid API Payload JSON: " + err.message);
+  return;
+}
+
+    try {
       const resp = await fetch('/api/subscriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: address.trim(), blocknumber: latestBlockNumber.trim(), topic0: topic0.trim(), abi: parsedAbi, api: actionEndpoint?.trim(),params:actionPayload,times:actionRetries,ActionName:actionName,ActionType:actionType  }),
+        body: JSON.stringify({ 
+        address: address.trim(),
+        blocknumber: latestBlockNumber.trim(),
+        topic0: topic0.trim(), abi: parsedAbi, 
+        api: actionEndpoint?.trim(),
+        params:parsedPayload,
+        times:actionRetries,
+        ActionName:actionName,
+        ActionType:actionType
+      }),
       });
 
       const json = await resp.json();
@@ -561,7 +597,8 @@ const [errors, setErrors] = useState<{
 
 
                   <p className="text-xs text-muted-foreground">
-                    Event signature hash (0x + 64 hex characters)
+                    Event signature hash (0x + 64 hex characters) Convert : 
+                    UserRegistered(uint256) to 0x6b1da4  <u><a href="https://web3tools.chainstacklabs.com/generate-event-signature" target="_blank" rel="noopener noreferrer">Convert </a></u>
                   </p>
                   {errors.topic0 && <p className="text-xs text-red-400 mt-1">{errors.topic0}</p>}
                   <button

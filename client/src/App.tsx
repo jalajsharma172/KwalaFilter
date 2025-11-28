@@ -5,11 +5,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import EventListener from "@/pages/event-listener";
 import NotFound from "@/pages/not-found";
-
+import Workflow from "@/pages/workflow";
+// import SuccessfulActions from "@/pages/successful-actions";
 function Router() {
   return (
     <Switch>
       <Route path="/" component={EventListener} />
+      <Route path="/workflow" component={Workflow} />      
       <Route component={NotFound} />
     </Switch>
   );
