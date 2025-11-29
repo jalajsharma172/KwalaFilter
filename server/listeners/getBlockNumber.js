@@ -18,9 +18,10 @@ export async function getContractLatestBlockNumber(contractAddress, preBlockNumb
       method: "GET",
       redirect: "follow"
     };
+console.log("preBlockNumber :  - " ,preBlockNumber);
 
     const response = await fetch(
-      `https://api.etherscan.io/v2/api?apikey=${apikey}&chainid=11155111&module=logs&action=getLogs&fromBlock=${preBlockNumber}&address=${contractAddress}&topic0=${eventSignature}&page=1&offset=1000`,
+      `https://api.etherscan.io/v2/api?apikey=${apikey}&chainid=11155111&module=logs&action=getLogs&fromBlock=${preBlockNumber}&address=${contractAddress}&topic0=${eventSignature}&page=1&offset=10000`,
       requestOptions
     );
 
@@ -38,7 +39,7 @@ export async function getContractLatestBlockNumber(contractAddress, preBlockNumb
 
       const maxBlockData = maxBlockLog?.data || null;
 
-      console.log(`Latest block number for contract ${contractAddress} is ${maxBlockNumber} with data: ${maxBlockData}`);
+      console.log(`API caLL at block number ${maxBlockNumber} at  ${contractAddress} is  with data: ${maxBlockData}`);
 
       return { maxBlockNumber, maxBlockData };
     } else {

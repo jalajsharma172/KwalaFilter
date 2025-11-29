@@ -335,18 +335,21 @@ const [errors, setErrors] = useState<{
 
     try {
       const resp = await fetch('/api/subscriptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-        address: address.trim(),
-        blocknumber: latestBlockNumber.trim(),
-        topic0: topic0.trim(), abi: parsedAbi, 
-        api: actionEndpoint?.trim(),
-        params:parsedPayload,
-        times:actionRetries,
-        ActionName:actionName,
-        ActionType:actionType
-      }),
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                      address: address.trim(),
+                      blocknumber: latestBlockNumber.trim(),
+                      topic0: topic0.trim(), abi: parsedAbi, 
+                      api: actionEndpoint?.trim(),
+                      params:parsedPayload,
+                      times:actionRetries,
+                      ActionName:actionName,
+                      ActionType:actionType,
+                      TargetFunction:targetFunction,
+                      TargetFunctionParameters:targetParams,
+                      TargetContract:targetContract
+                }),
       });
 
       const json = await resp.json();

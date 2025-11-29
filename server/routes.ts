@@ -78,7 +78,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST save subscription to Supabase
   app.post('/api/subscriptions', async (req, res) => {
     // Supabase config presence is validated below; avoid logging secrets here
-    const { address,blocknumber, topic0,abi,api,params,times,ActionName,ActionType } = req.body || {};
+    const { address,blocknumber, topic0,abi,api,params,times,ActionName,ActionType,TargetFunction,TargetFunctionParameters,TargetContract} = req.body || {};
 
     // basic validation
     if (!address || !topic0 || !blocknumber) {
@@ -114,12 +114,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const insertBody = {
         address: address.toLowerCase(),
         latest_block_number: blocknumber,
+        abi:abi,
         event_signature: topic0,
         api:api,
         params:params,
         times:times,
         ActionName:ActionName,
-        ActionType:ActionType
+        ActionType:ActionType,
+        TargetFunction:TargetFunction,
+        TargetContract,
+        TargetFunctionParameters
       };
 
       const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/subscription_latest_blocks`;
