@@ -10,23 +10,23 @@ import { config } from '../config.js';
 
 export async function getContractCreationBlock(contractAddress) {
   try {
-    if(config.ETHERSCAN_API_KEY===undefined){
+    if (config.ETHERSCAN_API_KEY === undefined) {
       throw new Error("Etherscan API key is missing or invalid.");
     }
     console.log(`📡 Fetching contract creation block from Etherscan for ${contractAddress}...`);
-    
+
     const url = `https://api.etherscan.io/api?module=contract&action=getcontractcreation&contractaddresses=${contractAddress}&apikey=${config.ETHERSCAN_API_KEY}`;
-    
+
     const response = await fetch(url);
     const data = await response.json();
-    
+
     if (data.status === '0') {
       throw new Error(`Etherscan API error: ${data.message}`);
     }
-    
+
     const creationBlock = parseInt(data.result[0].blockNumber, 10);
     console.log(`✓ Contract creation block found: ${creationBlock}`);
-    
+
     return creationBlock;
   } catch (error) {
     console.error(`❌ Failed to fetch contract creation block:`, error.message);
@@ -36,4 +36,3 @@ export async function getContractCreationBlock(contractAddress) {
   }
 }
 
-getContractCreationBlock("0xA31C51DCf4913AE9Dae63254bE9BbE350f7b8ADD");
