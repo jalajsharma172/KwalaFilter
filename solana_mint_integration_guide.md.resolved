@@ -1,0 +1,211 @@
+# Solana Mint & Fairscore Integration Guide
+
+This guide details how to integrate the Solana Minting system (with Fairscore eligibility checks) into an existing Next.js project.
+
+## 1. Architecture Overview
+
+The system consists of three main parts:
+1.  **Frontend**: Connects wallet, collects Twitter ID, displays scores, and requests transactions.
+2.  **Backend (API Routes)**:
+    *   `/api/check-score`: Proxies requests to Fairscale API to validate user eligibility.
+    *   `/api/mint`: Constructs a **Partial Sign** transaction. The server (Mint Authority) signs the mint instruction, and the user pays the fee.
+3.  **Solana Network**: Executing the final transaction.
+
+---
+
+## 2. Prerequisites & Setup
+
+### Dependencies
+Install the required packages in your existing project:
+```bash
+npm install @solana/web3.js @solana/spl-token @solana/wallet-adapter-react @solana/wallet-adapter-react-ui @solana/wallet-adapter-wallets bs58
+```
+
+### Environment Variables
+Configure your [.env.local](file:///c:/Users/jalaj/OneDrive/Desktop/FairFair/solana-mint-dapp/.env.local) file:
+```env
+# Public RPC Endpoint (Devnet for testing, Mainnet for prod)
+NEXT_PUBLIC_SOLANA_RPC=https://api.devnet.solana.com
+
+# The Private Key of the Authority that can mint the token (Array format or Base58)
+MINT_AUTHORITY_KEYPAIR=[1,2,3,...] 
+```
+
+### Solana Token Setup
+Before coding, ensure you have a standard SPL Token created on-chain.
+1.  **Create Token Reference**: You need the **Mint Address** of your token.
+2.  **Mint Authority**: You must possess the private key for the account that has `Mint Authority` for this token. This key goes into `MINT_AUTHORITY_KEYPAIR`.
+
+---
+
+## 3. Frontend Implementation
+
+### A. Providers
+Ensure your [app/layout.tsx](file:///c:/Users/jalaj/OneDrive/Desktop/FairFair/solana-mint-dapp/app/layout.tsx) or [app/provider.tsx](file:///c:/Users/jalaj/OneDrive/Desktop/FairFair/solana-mint-dapp/app/provider.tsx) wraps the app with Solana providers:
+```tsx
+// app/provider.tsx
+"use client";
+import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import { PhantomWalletAdapter, SolflareWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { useMemo } from "react";
+import "@solana/wallet-adapter-react-ui/styles.css";
+
+export default function Providers({ children }: { children: React.ReactNode }) {
+    const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC ?? "https://api.devnet.solana.com";
+    const wallets = useMemo(() => [new PhantomWalletAdapter(), new SolflareWalletAdapter()], []);
+
+    return (
+        <ConnectionProvider endpoint={endpoint}>
+            <WalletProvider wallets={wallets} autoConnect>
+                <WalletModalProvider>{children}</WalletModalProvider>
+            </WalletProvider>
+        </ConnectionProvider>
+    );
+}
+```
+
+### B. Mint Component & Form Logic
+This is the core logic for [page.tsx](file:///c:/Users/jalaj/OneDrive/Desktop/FairFair/solana-mint-dapp/app/page.tsx) or your specific component.
+
+**Key State Variables:**
+*   `twitterId`: Input for scoring.
+*   `scoreData`: Stores the result from `/api/check-score`.
+*   `sig`: Stores successful transaction signature.
+
+**Flow:**
+1.  **Check Score**: User inputs Twitter ID -> Call `/api/check-score`.
+2.  **Verify Eligibility**: App logic determines mint amount (e.g., Score > 60 gets 3 tokens).
+3.  **Request Mint**: Call `/api/mint` with amount & wallet address.
+4.  **Sign & Send**: Receive `base64` transaction -> Deserialize -> User Signs -> Send to Solana.
+
+**Code Snippet (Logic Only):**
+```tsx
+const handleFinalMint = async () => {
+    // 1. Request Partial Tx from Backend
+    const res = await fetch("/api/mint", {
+        method: "POST",
+        body: JSON.stringify({ walletAddress: publicKey.toBase58(), amount: calculatedAmount }),
+    });
+    const { transaction } = await res.json();
+
+    // 2. Deserialize
+    const tx = Transaction.from(Buffer.from(transaction, 'base64'));
+
+    // 3. User Signs (Pays for gas)
+    const signedTx = await signTransaction(tx);
+
+    // 4. Send
+    const signature = await connection.sendRawTransaction(signedTx.serialize());
+    await connection.confirmTransaction(signature);
+};
+```
+
+---
+
+## 4. Backend API Implementation
+
+### A. Score Check API ([/api/check-score/route.ts](file:///c:/Users/jalaj/OneDrive/Desktop/FairFair/solana-mint-dapp/app/api/check-score/route.ts))
+This endpoint acts as a secure bridge to the Fairscale API.
+
+**Request:** `{ walletAddress, twitterId, option: 'both' }`
+**Response:** `{ fairscore, social_score, ... }`
+
+```ts
+import { NextRequest, NextResponse } from "next/server";
+
+export async function POST(req: NextRequest) {
+    const { walletAddress, twitterId } = await req.json();
+    const apiKey = "YOUR_FAIRSCALE_KEY"; // Ideally in process.env
+    
+    const response = await fetch(`https://api.fairscale.xyz/score?wallet=${walletAddress}&twitter=${twitterId}`, {
+        headers: { "fairkey": apiKey }
+    });
+    
+    // ... handle response and return JSON
+}
+```
+
+### B. Minting API ([/api/mint/route.ts](file:///c:/Users/jalaj/OneDrive/Desktop/FairFair/solana-mint-dapp/app/api/mint/route.ts))
+This is the **Security Critical** component. It constructs the transaction and signs it with the Mint Authority key.
+
+**Key Logic:**
+1.  **Load Mint Authority**: `Keypair.fromSecretKey(...)` from env vars.
+2.  **Check User ATA**: Does the user have an Associated Token Account? If not, add instruction to create one.
+3.  **Mint Instruction**: `createMintToInstruction(...)` targeting the user's ATA.
+4.  **Fee Payer**: Set to **User** (`userPublicKey`).
+5.  **Partial Sign**: The backend signs/authorizes the minting action.
+6.  **Serialize**: Return `base64` transaction to frontend.
+
+**Reference Code Structure:**
+```ts
+// ... imports ...
+const MINT_ADDRESS = new PublicKey("YOUR_MINT_ADDRESS");
+
+export async function POST(req: NextRequest) {
+    const { walletAddress, amount } = await req.json();
+    // ... validate ...
+
+    // 1. Setup Connection & Authority
+    const connection = new Connection(process.env.NEXT_PUBLIC_SOLANA_RPC!);
+    const mintAuthority = Keypair.fromSecretKey(...); // Load from ENV
+
+    // 2. Create Transaction
+    const tx = new Transaction();
+    const userATA = await getAssociatedTokenAddress(MINT_ADDRESS, new PublicKey(walletAddress));
+
+    // 3. Add Instructions: CreateAccount (if needed) + MintTo
+    // ... (See existing project code for explicit instructions) ...
+
+    // 4. Config Transaction
+    tx.feePayer = new PublicKey(walletAddress);
+    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+
+    // 5. SECURELY SIGN
+    tx.partialSign(mintAuthority);
+
+    // 6. Return
+    return NextResponse.json({ transaction: tx.serialize({ requireAllSignatures: false }).toString("base64") });
+}
+```
+
+---
+
+## 5. Security & Signing Flow Explanation
+Why do we do it this way?
+
+1.  **Mint Authority Protection**: The `Mint Authority` private key **NEVER** leaves the server. It is stored in environment variables.
+2.  **Gas Fees**: The transaction `feePayer` is set to the **User**. This prevents the server from being drained of SOL.
+3.  **Partial Signing**:
+    *   **Server** signs "I authorize minting X tokens".
+    *   **User** signs "I authorize paying the gas fee".
+    *   Both signatures are required for the network to accept the transaction.
+
+## 6. Architecture Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Solana
+    
+    User->>Frontend: Enter Twitter ID
+    Frontend->>Backend: POST /api/check-score
+    Backend-->>Frontend: Return Fairscore
+    
+    Frontend->>Frontend: Calculate eligible tokens
+    User->>Frontend: Click "Mint"
+    
+    Frontend->>Backend: POST /api/mint (address, amount)
+    Backend->>Backend: Create Mint Instruction
+    Backend->>Backend: Sign with Mint Authority
+    Backend-->>Frontend: Return Partial Transaction (Base64)
+    
+    Frontend->>User: Request Wallet Signature
+    User->>Frontend: Approve & Sign (Gas Pay)
+    
+    Frontend->>Solana: Send Fully Signed Transaction
+    Solana-->>Frontend: Confirmation Signature
+    Frontend->>User: Show Success
+```
