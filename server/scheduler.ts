@@ -26,7 +26,7 @@ export function applyEventParams(input, decodedEvent) {
 
 
 
-export function startScheduler(command = 'node server/CheckingLatestBlockNumber/blocknumber.js', intervalMs = 30 * 1000) {
+export function startScheduler(command = 'node server/CheckingLatestBlockNumber/blocknumber.js', intervalMs = config.SCHEDULER_INTERVAL_MS) {
   console.log(`|  ${intervalMs}ms | -----------------------------------------------`);
 
   // Run immediately once

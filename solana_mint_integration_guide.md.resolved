@@ -22,7 +22,7 @@ npm install @solana/web3.js @solana/spl-token @solana/wallet-adapter-react @sola
 ```
 
 ### Environment Variables
-Configure your [.env.local](file:///c:/Users/jalaj/OneDrive/Desktop/FairFair/solana-mint-dapp/.env.local) file:
+Configure your [.env.local](file:///c:/Users/jalaj/OneDrive/Desktop/FairFair/solana-mint-dapp/.env) file:
 ```env
 # Public RPC Endpoint (Devnet for testing, Mainnet for prod)
 NEXT_PUBLIC_SOLANA_RPC=https://api.devnet.solana.com

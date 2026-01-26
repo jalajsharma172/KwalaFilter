@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: kwalafilter
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+    fromGroup: supabase-db-credentials
+
+envVarGroups:
+  - name: supabase-db-credentials
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: RPC_URL
+        sync: false
+      - key: RPC_WS_URL
+        sync: false
+      - key: ETHERSCAN_API_KEY
+        sync: false

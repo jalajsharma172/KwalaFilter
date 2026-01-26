@@ -11,6 +11,7 @@ export const config = {
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY,
   NODE_ENV: process.env.NODE_ENV || 'development',
+  SCHEDULER_INTERVAL_MS: Number(process.env.SCHEDULER_INTERVAL_MS) || 30000,
 };
 
 // Validate required env vars
