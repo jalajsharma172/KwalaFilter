@@ -281,9 +281,9 @@ export default function Navbar() {
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
-                    <Link href="/dashboard">
+                    <Link href="/workflow">
                         <Button className="bg-indigo-600 hover:bg-indigo-700 text-white border-0">
-                            Launch App
+                            View Dashboard
                         </Button>
                     </Link>
                 </div>
