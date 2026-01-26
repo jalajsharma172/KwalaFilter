@@ -1,0 +1,30 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Proxy /api requests to Render Backend
+[[redirects]]
+  from = "/api/*"
+  to = "https://kwalafilter.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# Proxy /listen requests (SSE) to Render Backend
+[[redirects]]
+  from = "/listen"
+  to = "https://kwalafilter.onrender.com/listen"
+  status = 200
+  force = true
+
+# Proxy /health requests to Render Backend
+[[redirects]]
+  from = "/health"
+  to = "https://kwalafilter.onrender.com/health"
+  status = 200
+  force = true
+
+# Catch-all for React Client-Side Routing (SPA)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
