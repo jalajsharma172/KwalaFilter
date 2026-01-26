@@ -82,13 +82,15 @@ export default function Navbar() {
             setScoreData(data);
 
             let tokens = 0;
-            if (data.fairscore_base < 30) {
+            const score = data.fairscore_base;
+
+            if (score < 30) {
                 tokens = 1;
-            } else if (data.fairscore < 60) {
+            } else if (score < 60) {
                 tokens = 2;
-            } else if (data.fairscore < 80) {
+            } else if (score < 80) {
                 tokens = 3;
-            } else if (data.fairscore < 100) {
+            } else {
                 tokens = 4;
             }
             setNumberOfTokens(tokens);
@@ -241,6 +243,12 @@ export default function Navbar() {
                                         </div>
                                         <div>
                                             <p className="text-xs text-center text-yellow-400">"{numberofTokens} {numberofTokens === 1 ? 'Token' : 'Tokens'}"</p>
+                                            <div className="text-xs text-gray-400 space-y-1 mt-4 p-2 bg-white/5 rounded border border-white/10">
+                                                <p>If Base Score &lt; 30 , you will get 1 token.</p>
+                                                <p>If Base 30 &lt; Score &lt; 60, you will get 2 tokens.</p>
+                                                <p>If Base 60 &lt; Score &lt; 80, you can take 3 tokens.</p>
+                                                <p>If Base 80 &lt; Score , you will get 4 tokens.</p>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
