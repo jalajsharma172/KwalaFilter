@@ -1,5 +1,4 @@
-import { Buffer } from "buffer";
-globalThis.Buffer = Buffer;
+import "./polyfills";
 
 import { createRoot } from "react-dom/client";
 import App from "./App";
