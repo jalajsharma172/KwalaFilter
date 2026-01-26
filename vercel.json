@@ -1,0 +1,20 @@
+{
+    "rewrites": [
+        {
+            "source": "/api/:path*",
+            "destination": "https://kwalafilter.onrender.com/api/:path*"
+        },
+        {
+            "source": "/listen",
+            "destination": "https://kwalafilter.onrender.com/listen"
+        },
+        {
+            "source": "/health",
+            "destination": "https://kwalafilter.onrender.com/health"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
+        }
+    ]
+}

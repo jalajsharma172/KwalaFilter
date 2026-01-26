@@ -8,6 +8,7 @@ import LandingPage from "@/pages/LandingPage";
 import Documentation from "@/pages/Documentation";
 import NotFound from "@/pages/not-found";
 import Workflow from "@/pages/workflow";
+import { KeepAlive } from "@/components/KeepAlive";
 // import SuccessfulActions from "@/pages/successful-actions";
 function Router() {
   return (
@@ -24,6 +25,7 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <KeepAlive />
       <TooltipProvider>
         <Toaster />
         <Router />
