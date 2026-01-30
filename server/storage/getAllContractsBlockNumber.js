@@ -30,7 +30,9 @@ export async function getContractBlockNumber() {
       return null;
     }
 
-    console.log("✓ Supabase data received:", json);
+    console.log("✓ Supabase data received");
+
+    // console.log("✓ Supabase data received:", json);
     return json;
 
   } catch (error) {

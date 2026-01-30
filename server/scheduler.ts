@@ -76,12 +76,12 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
         console.log(contractAddress, previousBlock, eventSignature);
         let maxBlockNumber: any = 0;
         let maxBlockData: any = 0;
+        let maxBlockLog: any = null;
         try {
           const res = await getContractLatestBlockNumber(contractAddress, previousBlock, eventSignature);
           if (res && typeof res === 'object') {
-            ({ maxBlockNumber, maxBlockData } = res as any);
+            ({ maxBlockNumber, maxBlockLog } = res as any);
           } else {
-            // If the helper returned a primitive (number), treat it as the block number
             maxBlockNumber = res as any;
           }
         } catch (error) {
@@ -109,20 +109,38 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
           console.log(
             `🔔 New block found for ${contractAddress}: ${maxBlockNumber} (previous: ${previousBlock})`
           );
-          const data = Number(BigInt(maxBlockData));//5
 
+          let decodedArgs: any[] = [];
+
+          if (maxBlockLog && abi) {
+            try {
+              const iface = new ethers.Interface(typeof abi === 'string' ? JSON.parse(abi) : abi);
+              const parsedLog = iface.parseLog({
+                topics: maxBlockLog.topics,
+                data: maxBlockLog.data
+              });
+              if (parsedLog) {
+                decodedArgs = Array.from(parsedLog.args);
+                console.log("✅ Successfully decoded log args:", decodedArgs);
+              }
+            } catch (decodeErr) {
+              console.warn("⚠️ Failed to decode log with ABI:", decodeErr);
+              // Fallback: use raw data if possible, though likely useless for address
+              decodedArgs = [maxBlockLog.data];
+            }
+          }
 
           if (ActionType == "CALL") {
             console.log("contractAddress : ", contractAddress);
             console.log("ABI : ", abi);
             console.log("Event Signature : ", eventSignature);
-            console.log("Data : ", data);
+            console.log("Decoded Args : ", decodedArgs);
 
           } else {
             //Get Value
             const decodedData = {
               event: eventSignature,
-              args: [data]
+              args: decodedArgs
             }
 
             // Process the params with dynamic event replacement

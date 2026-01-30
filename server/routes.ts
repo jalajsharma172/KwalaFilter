@@ -7,7 +7,7 @@ import { startListening, getActiveSubscriptions } from "./listeners/logListener.
 import { getContractLatestBlockNumber } from './listeners/getBlockNumber.js';
 import { config } from './config.js';
 import { ethers } from "ethers";
-import { SERVER_WALLET_ADDRESS, TOKEN_ADDRESS } from './billing.js';
+import { SERVER_WALLET_ADDRESS, TOKEN_ADDRESS, chargeUser } from './billing.js';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Price Alerts API
@@ -122,7 +122,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // Solana Mint API
+  // Manual Billing Charge API
+  app.post('/api/billing/charge', async (req, res) => {
+    const { userAddress, amount } = req.body;
+
+    if (!userAddress) {
+      return res.status(400).json({ error: 'Missing userAddress' });
+    }
+
+    try {
+      let feeAmount;
+      if (amount) {
+        try {
+          feeAmount = ethers.parseUnits(String(amount), 18);
+        } catch (e) {
+          return res.status(400).json({ error: 'Invalid amount format' });
+        }
+      }
+
+      const result = await chargeUser(userAddress, feeAmount);
+
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (e: any) {
+      console.error("Manual charge error:", e);
+      res.status(500).json({ error: e.message || String(e) });
+    }
+  });
+
+
   // Ethereum Mint API (Sepolia)
   // Distributor Claim API
   app.post('/api/mint', async (req, res) => {
@@ -154,7 +185,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 2. Define Amount & Deadline
       const amountInWei = ethers.parseUnits(amount.toString(), 18);
-      const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const deadline = Math.floor(Date.now() / 1000) + (30 * 60 * 60); // 30 hours from now
 
       // 3. Chain ID (Sepolia = 11155111)
       const network = await provider.getNetwork();
