@@ -8,9 +8,7 @@ import LandingPage from "@/pages/LandingPage";
 import Documentation from "@/pages/Documentation";
 import NotFound from "@/pages/not-found";
 import Workflow from "@/pages/workflow";
-import WorkflowDetail from "@/pages/workflow-detail";
 import { KeepAlive } from "@/components/KeepAlive";
-import Dashboard from "./pages/entry";
 // import SuccessfulActions from "@/pages/successful-actions";
 function Router() {
   return (
@@ -19,10 +17,9 @@ function Router() {
       <Route path="/docs" component={Documentation} />
       <Route path="/dashboard" component={EventListener} />
       <Route path="/workflow" component={Workflow} />
-      <Route path="/workflow/:id" component={WorkflowDetail} />
-
-      {/* <Route path="/work" component={} /> */}
-
+      
+      <Route path="/work" component={} />
+      <Route component={NotFound} />
     </Switch>
   );
 }

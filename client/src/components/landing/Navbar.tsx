@@ -12,14 +12,24 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState, useEffect } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { Transaction, PublicKey } from "@solana/web3.js";
-import { getAssociatedTokenAddress } from "@solana/spl-token";
+import { createThirdwebClient, defineChain } from "thirdweb";
+import { ConnectButton, useActiveAccount, useSendTransaction, useReadContract } from "thirdweb/react";
+import { createWallet, walletConnect } from "thirdweb/wallets";
+import { getContract, prepareContractCall, toEther } from "thirdweb";
+
+// Initialize Thirdweb Client
+// NOTE: You should replace 'YOUR_CLIENT_ID' with your actual Thirdweb Client ID in a .env file
+const client = createThirdwebClient({
+    clientId: import.meta.env.VITE_THIRDWEB_CLIENT_ID || "c5539fa07b461327170133887c33158f",
+});
+
+const sepoliaChain = defineChain(11155111);
 
 export default function Navbar() {
-    const { connection } = useConnection();
-    const { publicKey, sendTransaction } = useWallet();
+    // Thirdweb Hook for active account
+    const activeAccount = useActiveAccount();
+    const { mutate: sendTransaction, isPending: isMinting } = useSendTransaction();
+
     const [amount, setAmount] = useState("");
     const [recipient, setRecipient] = useState("");
     const [loading, setLoading] = useState(false);
@@ -31,38 +41,77 @@ export default function Navbar() {
     const [numberofTokens, setNumberOfTokens] = useState(0);
     const [tokenBalance, setTokenBalance] = useState<number | null>(null);
 
-    const MINT_ADDRESS = new PublicKey("jCKxk3E8yEjGX8WmWA7m3ShcqX6yTwiSJF9R5QzP5pv");
+    const TOKEN_ADDRESS = "0x807a8c2664c116259ba2af0a070D0B477498b12f";
+    const SERVER_WALLET = "0x1B96Ad5aE222c4e7F6Eb9a5d772aDB7974E0a652"; // Hardcoded for demo, usually from env or API
 
-    useEffect(() => {
-        const fetchBalance = async () => {
-            if (publicKey && connection) {
-                try {
-                    const ata = await getAssociatedTokenAddress(MINT_ADDRESS, publicKey);
-                    const balance = await connection.getTokenAccountBalance(ata);
-                    setTokenBalance(balance.value.uiAmount);
-                } catch (e) {
-                    console.log("Error fetching balance (likely no ATA):", e);
-                    setTokenBalance(0);
-                }
-            } else {
-                setTokenBalance(null);
+    // Read Balance
+    const { data: balanceData } = useReadContract({
+        contract: getContract({
+            client,
+            chain: sepoliaChain,
+            address: TOKEN_ADDRESS,
+        }),
+        method: "function balanceOf(address) view returns (uint256)",
+        params: [activeAccount?.address || "0x0000000000000000000000000000000000000000"],
+    });
+
+    // Read Allowance
+    const { data: allowanceData, refetch: refetchAllowance } = useReadContract({
+        contract: getContract({
+            client,
+            chain: sepoliaChain,
+            address: TOKEN_ADDRESS,
+        }),
+        method: "function allowance(address owner, address spender) view returns (uint256)",
+        params: [
+            activeAccount?.address || "0x0000000000000000000000000000000000000000",
+            SERVER_WALLET
+        ],
+    });
+
+    // Approval Transaction
+    const handleApprove = () => {
+        if (!activeAccount) return;
+        setLoading(true);
+        const contract = getContract({ client, chain: sepoliaChain, address: TOKEN_ADDRESS });
+        const transaction = prepareContractCall({
+            contract,
+            method: "function approve(address spender, uint256 amount)",
+            params: [SERVER_WALLET, BigInt(10000000000000000000)], // 10 Tokens
+        });
+        sendTransaction(transaction, {
+            onSuccess: () => {
+                setStatus("Approval Successful! Auto-charge enabled.");
+                refetchAllowance();
+                setLoading(false);
+            },
+            onError: (err) => {
+                setStatus(`Approval Failed: ${err.message}`);
+                setLoading(false);
             }
-        };
+        });
+    };
 
-        fetchBalance();
-        const id = setInterval(fetchBalance, 10000); // Verify every 10s
-        return () => clearInterval(id);
-    }, [publicKey, connection]);
+    const MINT_ADDRESS = "0x6327d40E71b742Bb55477B1A950f54af7fdf320E";
 
+    const wallets = [
+        createWallet("io.metamask"),
+        createWallet("com.coinbase.wallet"),
+        walletConnect(),
+    ];
+
+    // Sync active account to local state for existing logic compatibility
     useEffect(() => {
-        if (publicKey) {
-            setWalletaddress(publicKey.toBase58());
+        if (activeAccount) {
+            setWalletaddress(activeAccount.address);
+        } else {
+            setWalletaddress("");
         }
-    }, [publicKey]);
+    }, [activeAccount]);
 
     const handleNext = async () => {
         if (!walletaddress || !twitterid) {
-            setStatus("Please fill in all fields.");
+            setStatus("Please fill in all fields (Connect Wallet first).");
             return;
         }
 
@@ -106,22 +155,16 @@ export default function Navbar() {
     };
 
     const handleMint = async () => {
-        if (!publicKey) {
+        if (!walletaddress) {
             setStatus("Please connect your wallet first.");
             return;
-        }
-        // Note: amount and recipient checks might need adjustment if not set in UI
-        if (!amount || !recipient) {
-            // For now allowing proceed to see if user wants to fix this separately or if logic is implied
-            // setStatus("Please fill in all fields."); 
-            // return; 
         }
 
         try {
             setLoading(true);
-            setStatus("Requesting mint signature...");
+            setStatus("Requesting signature from server...");
 
-            // 1. Request Partial Tx from Backend
+            // Call Backend API
             const res = await fetch("/api/mint", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -131,28 +174,44 @@ export default function Navbar() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "Mint failed");
 
-            const { transaction } = data;
+            setStatus("Signature received. Confirm transaction in wallet...");
 
-            // 2. Deserialize
-            setStatus("Please sign the transaction...");
-            const tx = Transaction.from(Buffer.from(transaction, 'base64'));
+            // Prepare Transaction
+            const contract = getContract({
+                client,
+                chain: sepoliaChain,
+                address: data.distributorAddress,
+            });
 
-            // 3. User Signs & Sends (Pays for gas)
-            const signature = await sendTransaction(tx, connection);
+            const transaction = prepareContractCall({
+                contract,
+                method: "function claim(uint256 amount, uint256 deadline, bytes calldata signature)",
+                params: [BigInt(data.amount), BigInt(data.deadline), data.signature as `0x${string}`],
+            });
 
-            setStatus(`Confirming transaction...`);
-            await connection.confirmTransaction(signature, 'confirmed');
+            // Send Transaction
+            sendTransaction(transaction, {
+                onSuccess: (tx) => {
+                    setStatus(`Claim Successful! TX: ${tx.transactionHash}`);
+                    setStep(1);
+                    setLoading(false);
+                },
+                onError: (error) => {
+                    console.error("Claim Error:", error);
+                    setStatus(`Error: ${error.message}`);
+                    setLoading(false);
+                },
+            });
 
-            setStatus(`Mint Successful! Sig: ${signature.slice(0, 8)}...`);
-            setAmount("");
-            setRecipient("");
-            setStep(1); // Reset to step 1
         } catch (err: any) {
             console.error("Mint Error:", err);
             setStatus(`Error: ${err.message}`);
-        } finally {
             setLoading(false);
         }
+    };
+
+    const formatAddress = (addr: string) => {
+        return addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
     };
 
     return (
@@ -171,12 +230,55 @@ export default function Navbar() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    {tokenBalance !== null && (
-                        <div className="hidden md:block text-sm font-medium text-white bg-white/10 px-3 py-1.5 rounded-full border border-white/10">
-                            {tokenBalance} Tokens
+                    {activeAccount && balanceData !== undefined && (
+                        <div className="hidden sm:flex items-center gap-3">
+                            {/* Balance Badge */}
+                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm">
+                                <span className="text-gray-400">Bal:</span>
+                                <span className="text-white font-medium">
+                                    {Number(toEther(balanceData)).toFixed(2)} KWALA
+                                </span>
+                            </div>
+
+                            {/* Allowance / Billing Status */}
+                            {allowanceData !== undefined && (
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm ${Number(toEther(allowanceData)) > 0.1
+                                        ? "bg-green-500/10 border-green-500/20 text-green-400"
+                                        : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
+                                    }`}>
+                                    <span>Billing:</span>
+                                    <span className="font-bold">
+                                        {Number(toEther(allowanceData)) > 0.1 ? "ACTIVE" : "INACTIVE"}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Enable Billing Button (if inactive) */}
+                            {allowanceData !== undefined && Number(toEther(allowanceData)) < 0.1 && (
+                                <Button
+                                    onClick={handleApprove}
+                                    variant="ghost"
+                                    className="text-xs h-8 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 border border-indigo-600/30"
+                                    disabled={loading}
+                                >
+                                    Enable Auto-Charge
+                                </Button>
+                            )}
                         </div>
                     )}
-                    <WalletMultiButton className="!bg-indigo-600 hover:!bg-indigo-700 !h-9 !px-4 !py-2 !text-sm" />
+                    {/* Thirdweb Connect Button */}
+                    <div className="custom-thirdweb-btn">
+                        <ConnectButton
+                            client={client}
+                            wallets={wallets}
+                            chain={sepoliaChain}
+                            connectButton={{
+                                label: "Select Wallet",
+                                className: "!bg-indigo-600 !hover:bg-indigo-700 !text-white !h-9 !px-4 !py-2 !text-sm !rounded-md !font-medium"
+                            }}
+                        />
+                    </div>
+
                     <Dialog>
                         <DialogTrigger asChild>
                             <Button variant="outline" className="text-white border-white/20 hover:bg-white/10 hover:text-white">
@@ -199,11 +301,12 @@ export default function Navbar() {
                                             </Label>
                                             <Input
                                                 id="walletaddress"
-                                                placeholder="0x0000000000000000000000000000000000000000"
+                                                placeholder="0x..."
                                                 className="col-span-3 bg-black/50 border-white/20 text-white"
                                                 type="text"
                                                 value={walletaddress}
-                                                onChange={(e) => setWalletaddress(e.target.value)}
+                                                readOnly // Address comes from wallet now
+                                            // onChange={(e) => setWalletaddress(e.target.value)}
                                             />
                                         </div>
                                         <div className="grid grid-cols-4 items-center gap-4">
@@ -253,7 +356,7 @@ export default function Navbar() {
                                     </div>
                                 )}
 
-                                {status && <p className="text-xs text-center text-yellow-400">{status}</p>}
+                                {status && <p className="text-xs text-center text-yellow-400 break-all">{status}</p>}
                             </div>
                             <DialogFooter>
                                 {step === 1 ? (

@@ -3,10 +3,10 @@ import "./polyfills";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import SolanaProvider from "./components/SolanaProvider";
+import { ThirdwebProvider } from "thirdweb/react";
 
 createRoot(document.getElementById("root")!).render(
-    <SolanaProvider>
+    <ThirdwebProvider>
         <App />
-    </SolanaProvider>
+    </ThirdwebProvider>
 );

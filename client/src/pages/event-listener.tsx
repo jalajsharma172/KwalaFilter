@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Activity, StopCircle, PlayCircle, ExternalLink, Zap, Database, Copy, Check } from "lucide-react";
+import { YamlGenerator } from "@/components/YamlGenerator";
 
 type StatusType = 'idle' | 'connecting' | 'listening' | 'catching-up' | 'error';
 //Ready to start listening - Ye Workflow ki baat ho rahi hai
@@ -24,6 +25,7 @@ interface LogEntry {
 }
 
 export default function EventListener() {
+  const [showYamlBuilder, setShowYamlBuilder] = useState(true);
   const [logs, setLogs] = useState<LogEntry[]>([]);//Workflow[]
   const [status, setStatus] = useState<StatusType>('idle');//Status of workflow
   const [statusMessage, setStatusMessage] = useState<string>('Ready to start listening');//MSG of workflow
@@ -42,21 +44,21 @@ export default function EventListener() {
   const [targetFunction, setTargetFunction] = useState('');
   const [chainId, setChainId] = useState('11155111');
   const [targetParams, setTargetParams] = useState('');
-  const [isFormValid, setIsFormValid] = useState(false); 
+  const [isFormValid, setIsFormValid] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [copied, setCopied] = useState('');
 
-//error
-const [errors, setErrors] = useState<{
-  address?: string;
-  topic0?: string;
-  abi?: string;
-  api?: string;
-  latestBlockNumber?: string;      // ✅ ADD THIS
-}>({});
- 
+  //error
+  const [errors, setErrors] = useState<{
+    address?: string;
+    topic0?: string;
+    abi?: string;
+    api?: string;
+    latestBlockNumber?: string;      // ✅ ADD THIS
+  }>({});
+
 
 
 
@@ -71,7 +73,7 @@ const [errors, setErrors] = useState<{
 
   const handleStartListening = async (e: React.FormEvent) => {
     console.log("HandlestartListening");
-    
+
     e.preventDefault();
 
     // Validate inputs
@@ -98,7 +100,7 @@ const [errors, setErrors] = useState<{
       eventSourceRef.current.close();
     }
     console.log("HandlestartListening conditions Over");
-    
+
 
     setLogs([]);
     setStatus('connecting');
@@ -109,9 +111,9 @@ const [errors, setErrors] = useState<{
       const url = `/listen?address=${encodeURIComponent(address.trim())}&topic0=${encodeURIComponent(topic0.trim())}&abi=${encodeURIComponent(abiBase64)}&api=${encodeURIComponent(actionEndpoint.trim())}`;
       const eventSource = new EventSource(url);
 
-    console.log("EVENT");
-    console.log("eventSource : ",eventSource);
-      
+      console.log("EVENT");
+      console.log("eventSource : ", eventSource);
+
       eventSourceRef.current = eventSource;
 
       eventSource.addEventListener('connected', (e: MessageEvent) => {
@@ -155,7 +157,7 @@ const [errors, setErrors] = useState<{
         // Normalize shape so renderer has direct fields
         const normalized = {
           blockNumber: encoded.blockNumber ?? decoded?.raw?.blockNumber ?? null,
-            // transactionHash always optional; guard for substring usage later
+          // transactionHash always optional; guard for substring usage later
           transactionHash: encoded.transactionHash ?? null,
           address: encoded.address ?? null,
           topics: encoded.topics ?? [],
@@ -203,62 +205,62 @@ const [errors, setErrors] = useState<{
     }
   };
 
- const validateInputs = (): {
-  ok: boolean;
-  errors: {
-    address?: string;
-    topic0?: string;  
-    abi?: string;
-    api?: string;
-    latestBlockNumber?: string;
+  const validateInputs = (): {
+    ok: boolean;
+    errors: {
+      address?: string;
+      topic0?: string;
+      abi?: string;
+      api?: string;
+      latestBlockNumber?: string;
+    };
+  } => {
+    const addr = address.trim();
+    const tp = topic0.trim();
+    const ab = abi.trim();
+    const ap = actionEndpoint.trim();
+    const lb = latestBlockNumber.trim();
+
+    const out: {
+      address?: string;
+      topic0?: string;
+      abi?: string;
+      api?: string;
+      latestBlockNumber?: string;
+    } = {};
+
+    if (!addr) out.address = 'Please enter a contract address';
+    else if (!/^0x[a-fA-F0-9]{40}$/.test(addr))
+      out.address = 'Invalid address format (0x + 40 hex chars)';
+
+    if (!tp) out.topic0 = 'Please enter topic0';
+    else if (!/^0x[a-fA-F0-9]{64}$/.test(tp))
+      out.topic0 = 'Invalid topic0 (0x + 64 hex chars)';
+
+    if (!ab) out.abi = 'Please enter ABI';
+    else {
+      try {
+        const parsed = JSON.parse(ab);
+        if (!Array.isArray(parsed)) out.abi = 'ABI must be array';
+      } catch {
+        out.abi = 'ABI JSON invalid';
+      }
+    }
+
+    if (ap) {
+      try {
+        if (!ap.startsWith('/')) new URL(ap);
+      } catch {
+        out.api = 'Invalid API URL';
+      }
+    }
+
+    if (!lb) out.latestBlockNumber = 'Please enter latest block number';
+    else if (isNaN(Number(lb)))
+      out.latestBlockNumber = 'Block number must be number';
+
+    return { ok: Object.keys(out).length === 0, errors: out };
   };
-} => {
-  const addr = address.trim();
-  const tp = topic0.trim();
-  const ab = abi.trim();
-  const ap = actionEndpoint.trim();
-  const lb = latestBlockNumber.trim();
-
-  const out: {
-    address?: string;
-    topic0?: string;
-    abi?: string;
-    api?: string;
-    latestBlockNumber?: string;
-  } = {};
-
-  if (!addr) out.address = 'Please enter a contract address';
-  else if (!/^0x[a-fA-F0-9]{40}$/.test(addr))
-    out.address = 'Invalid address format (0x + 40 hex chars)';
-
-  if (!tp) out.topic0 = 'Please enter topic0';
-  else if (!/^0x[a-fA-F0-9]{64}$/.test(tp))
-    out.topic0 = 'Invalid topic0 (0x + 64 hex chars)';
-
-  if (!ab) out.abi = 'Please enter ABI';
-  else {
-    try {
-      const parsed = JSON.parse(ab);
-      if (!Array.isArray(parsed)) out.abi = 'ABI must be array';
-    } catch {
-      out.abi = 'ABI JSON invalid';
-    }
-  }
-
-  if (ap) {
-    try {
-      if (!ap.startsWith('/')) new URL(ap);
-    } catch {
-      out.api = 'Invalid API URL';
-    }
-  }
-
-  if (!lb) out.latestBlockNumber = 'Please enter latest block number';
-  else if (isNaN(Number(lb)))
-    out.latestBlockNumber = 'Block number must be number';
-
-  return { ok: Object.keys(out).length === 0, errors: out };
-};
 
 
   const handleTestInputs = (e?: React.MouseEvent) => {
@@ -306,50 +308,50 @@ const [errors, setErrors] = useState<{
     }
 
     try {
-  const obj = JSON.parse(actionPayload);
+      const obj = JSON.parse(actionPayload);
 
-  if (typeof obj !== "object" || Array.isArray(obj) || obj === null) {
-    throw new Error("Payload must be a JSON object.");
-  }
+      if (typeof obj !== "object" || Array.isArray(obj) || obj === null) {
+        throw new Error("Payload must be a JSON object.");
+      }
 
-  for (const k in obj) {
-    const v = obj[k];
-    if (
-      v !== null &&
-      typeof v !== "string" &&
-      typeof v !== "number" &&
-      typeof v !== "boolean"
-    ) {
-      throw new Error(
-        `Invalid value type for key "${k}". Only string, number, boolean, null allowed.`
-      );
+      for (const k in obj) {
+        const v = obj[k];
+        if (
+          v !== null &&
+          typeof v !== "string" &&
+          typeof v !== "number" &&
+          typeof v !== "boolean"
+        ) {
+          throw new Error(
+            `Invalid value type for key "${k}". Only string, number, boolean, null allowed.`
+          );
+        }
+      }
+
+      parsedPayload = obj;
+    } catch (err: any) {
+      setStatus("error");
+      setStatusMessage("Invalid API Payload JSON: " + err.message);
+      return;
     }
-  }
-
-  parsedPayload = obj;
-} catch (err: any) {
-  setStatus("error");
-  setStatusMessage("Invalid API Payload JSON: " + err.message);
-  return;
-}
 
     try {
       const resp = await fetch('/api/subscriptions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                      address: address.trim(),
-                      blocknumber: latestBlockNumber.trim(),
-                      topic0: topic0.trim(), abi: parsedAbi, 
-                      api: actionEndpoint?.trim(),
-                      params:parsedPayload,
-                      times:actionRetries,
-                      ActionName:actionName,
-                      ActionType:actionType,
-                      TargetFunction:targetFunction,
-                      TargetFunctionParameters:targetParams,
-                      TargetContract:targetContract
-                }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: address.trim(),
+          blocknumber: latestBlockNumber.trim(),
+          topic0: topic0.trim(), abi: parsedAbi,
+          api: actionEndpoint?.trim(),
+          params: parsedPayload,
+          times: actionRetries,
+          ActionName: actionName,
+          ActionType: actionType,
+          TargetFunction: targetFunction,
+          TargetFunctionParameters: targetParams,
+          TargetContract: targetContract
+        }),
       });
 
       const json = await resp.json();
@@ -508,11 +510,26 @@ const [errors, setErrors] = useState<{
   const exampleAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
   const exampleTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
+  if (showYamlBuilder) {
+    return (
+      <div className="min-h-screen w-full bg-[#0d1117] text-white p-6">
+        <YamlGenerator onBack={() => setShowYamlBuilder(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
         {/* Header */}
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-2 relative">
+          <Button
+            className="absolute right-0 top-0 bg-blue-600 hover:bg-blue-700"
+            onClick={() => setShowYamlBuilder(true)}
+          >
+            Workflow Builder
+          </Button>
+
           <div className="flex items-center justify-center gap-2">
             <Zap className="h-10 w-10 text-primary" />
             <h1 className="text-4xl font-extrabold text-foreground" data-testid="text-page-title">
@@ -581,7 +598,7 @@ const [errors, setErrors] = useState<{
                       </>
                     )}
                   </button>
-                  </div>
+                </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="topic0">Event Topic (topic0)</Label>
@@ -600,7 +617,7 @@ const [errors, setErrors] = useState<{
 
 
                   <p className="text-xs text-muted-foreground">
-                    Event signature hash (0x + 64 hex characters) Convert : 
+                    Event signature hash (0x + 64 hex characters) Convert :
                     UserRegistered(uint256) to 0x6b1da4  <u><a href="https://web3tools.chainstacklabs.com/generate-event-signature" target="_blank" rel="noopener noreferrer">Convert </a></u>
                   </p>
                   {errors.topic0 && <p className="text-xs text-red-400 mt-1">{errors.topic0}</p>}
@@ -621,8 +638,8 @@ const [errors, setErrors] = useState<{
                   </button>
                 </div>
 
-                
-              <div className="space-y-2">
+
+                <div className="space-y-2">
                   <Label htmlFor="latestBlockNumber">Latest Block Number</Label>
                   <Input
                     id="latestBlockNumber"
@@ -636,20 +653,21 @@ const [errors, setErrors] = useState<{
                     <p className="text-xs text-red-400 mt-1">{errors.latestBlockNumber}</p>
                   )}
 
-              </div>
-              
+                </div>
 
 
 
 
 
 
-                  <p className="text-xs text-muted-foreground">
-                   you need to provide the latest block number.
-                  </p>
-               
 
-                
+
+                <p className="text-xs text-muted-foreground">
+                  you need to provide the latest block number.
+                </p>
+
+
+
 
                 <div className="space-y-2">
                   <Label htmlFor="abi">Contract ABI</Label>
@@ -667,146 +685,148 @@ const [errors, setErrors] = useState<{
                   {errors.abi && <p className="text-xs text-red-400 mt-1">{errors.abi}</p>}
                 </div>
 
-                
 
 
 
 
 
-               
-                  {/* Action configuration block */}
-                  <div className="mt-4 p-4 rounded-lg border bg-muted/5">
-                    <h4 className="text-sm font-semibold mb-2">Action 1</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor="actionName">Action Name *</Label>
+
+
+
+
+                {/* Action configuration block */}
+                <div className="mt-4 p-4 rounded-lg border bg-muted/5">
+                  <h4 className="text-sm font-semibold mb-2">Action 1</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="actionName">Action Name *</Label>
+                      <Input
+                        id="actionName"
+                        placeholder="Enter action name"
+                        value={actionName}
+                        onChange={(e) => setActionName(e.target.value)}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="actionType">Action Type *</Label>
+                      <select
+                        id="actionType"
+                        value={actionType}
+                        onChange={(e) => setActionType(e.target.value)}
+                        className="w-full rounded-md border bg-input text-foreground text-xs p-2"
+                      >
+                        <option value="POST">POST (API Call)</option>
+                        <option value="CALL">CALL (Smart Contract)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {actionType === 'POST' ? (
+                    <>
+                      <div className="mt-3">
+                        <Label htmlFor="actionEndpoint">API Endpoint *</Label>
                         <Input
-                          id="actionName"
-                          placeholder="Enter action name"
-                          value={actionName}
-                          onChange={(e) => setActionName(e.target.value)}
+                          id="actionEndpoint"
+                          placeholder="https://api.example.com/webhook"
+                          value={actionEndpoint}
+                          onChange={(e) => setActionEndpoint(e.target.value)}
                           className="font-mono text-xs"
                         />
                       </div>
-                      <div>
-                        <Label htmlFor="actionType">Action Type *</Label>
+
+                      <div className="mt-3">
+                        <Label htmlFor="actionPayload">API Payload (JSON) *</Label>
+                        <textarea
+                          id="actionPayload"
+                          placeholder="{}"
+                          value={actionPayload}
+                          onChange={(e) => setActionPayload(e.target.value)}
+                          className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md"
+                        />
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <Label htmlFor="actionRetries">Retries Until Success *</Label>
+                          <Input
+                            id="actionRetries"
+                            type="number"
+                            min={0}
+                            value={actionRetries as any}
+                            onChange={(e) => setActionRetries(e.target.value === '' ? '' : Number(e.target.value))}
+                            className="font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    // CALL (Smart Contract) fields
+                    <>
+                      <div className="mt-3">
+                        <Label htmlFor="targetContract">Target Contract *</Label>
+                        <Input
+                          id="targetContract"
+                          placeholder="0x..."
+                          value={targetContract}
+                          onChange={(e) => setTargetContract(e.target.value)}
+                          className="font-mono text-xs"
+                        />
+                      </div>
+
+                      <div className="mt-3">
+                        <Label htmlFor="targetFunction">Target Function *</Label>
+                        <Input
+                          id="targetFunction"
+                          placeholder="function updateNFT(string memory userId, uint256 points)"
+                          value={targetFunction}
+                          onChange={(e) => setTargetFunction(e.target.value)}
+                          className="font-mono text-xs"
+                        />
+                      </div>
+
+                      <div className="mt-3">
+                        <Label htmlFor="chainId">Chain ID *</Label>
                         <select
-                          id="actionType"
-                          value={actionType}
-                          onChange={(e) => setActionType(e.target.value)}
+                          id="chainId"
+                          value={chainId}
+                          onChange={(e) => setChainId(e.target.value)}
                           className="w-full rounded-md border bg-input text-foreground text-xs p-2"
                         >
-                          <option value="POST">POST (API Call)</option>
-                          <option value="CALL">CALL (Smart Contract)</option>
+                          <option value="1">Ethereum Mainnet (1)</option>
+                          <option value="11155111">Sepolia (11155111)</option>
+                          <option value="5">Goerli (5)</option>
                         </select>
                       </div>
-                    </div>
 
-                    {actionType === 'POST' ? (
-                      <> 
-                        <div className="mt-3">
-                          <Label htmlFor="actionEndpoint">API Endpoint *</Label>
+                      <div className="mt-3">
+                        <Label htmlFor="targetParams">Target Parameters (one per line)</Label>
+                        <textarea
+                          id="targetParams"
+                          placeholder="re.event(0)\nre.event(1)"
+                          value={targetParams}
+                          onChange={(e) => setTargetParams(e.target.value)}
+                          className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md"
+                        />
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <Label htmlFor="actionRetries">Retries Until Success *</Label>
                           <Input
-                            id="actionEndpoint"
-                            placeholder="https://api.example.com/webhook"
-                            value={actionEndpoint}
-                            onChange={(e) => setActionEndpoint(e.target.value)}
+                            id="actionRetries"
+                            type="number"
+                            min={0}
+                            value={actionRetries as any}
+                            onChange={(e) => setActionRetries(e.target.value === '' ? '' : Number(e.target.value))}
                             className="font-mono text-xs"
                           />
                         </div>
-
-                        <div className="mt-3">
-                          <Label htmlFor="actionPayload">API Payload (JSON) *</Label>
-                          <textarea
-                            id="actionPayload"
-                            placeholder="{}"
-                            value={actionPayload}
-                            onChange={(e) => setActionPayload(e.target.value)}
-                            className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md"
-                          />
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <Label htmlFor="actionRetries">Retries Until Success *</Label>
-                            <Input
-                              id="actionRetries"
-                              type="number"
-                              min={0}
-                              value={actionRetries as any}
-                              onChange={(e) => setActionRetries(e.target.value === '' ? '' : Number(e.target.value))}
-                              className="font-mono text-xs"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      // CALL (Smart Contract) fields
-                      <>
-                        <div className="mt-3">
-                          <Label htmlFor="targetContract">Target Contract *</Label>
-                          <Input
-                            id="targetContract"
-                            placeholder="0x..."
-                            value={targetContract}
-                            onChange={(e) => setTargetContract(e.target.value)}
-                            className="font-mono text-xs"
-                          />
-                        </div>
-
-                        <div className="mt-3">
-                          <Label htmlFor="targetFunction">Target Function *</Label>
-                          <Input
-                            id="targetFunction"
-                            placeholder="function updateNFT(string memory userId, uint256 points)"
-                            value={targetFunction}
-                            onChange={(e) => setTargetFunction(e.target.value)}
-                            className="font-mono text-xs"
-                          />
-                        </div>
-
-                        <div className="mt-3">
-                          <Label htmlFor="chainId">Chain ID *</Label>
-                          <select
-                            id="chainId"
-                            value={chainId}
-                            onChange={(e) => setChainId(e.target.value)}
-                            className="w-full rounded-md border bg-input text-foreground text-xs p-2"
-                          >
-                            <option value="1">Ethereum Mainnet (1)</option>
-                            <option value="11155111">Sepolia (11155111)</option>
-                            <option value="5">Goerli (5)</option>
-                          </select>
-                        </div>
-
-                        <div className="mt-3">
-                          <Label htmlFor="targetParams">Target Parameters (one per line)</Label>
-                          <textarea
-                            id="targetParams"
-                            placeholder="re.event(0)\nre.event(1)"
-                            value={targetParams}
-                            onChange={(e) => setTargetParams(e.target.value)}
-                            className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md"
-                          />
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <Label htmlFor="actionRetries">Retries Until Success *</Label>
-                            <Input
-                              id="actionRetries"
-                              type="number"
-                              min={0}
-                              value={actionRetries as any}
-                              onChange={(e) => setActionRetries(e.target.value === '' ? '' : Number(e.target.value))}
-                              className="font-mono text-xs"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  <div className="space-y-2">
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="space-y-2">
                   <Button
                     type="button"
                     data-testid="button-test-inputs"
@@ -816,7 +836,8 @@ const [errors, setErrors] = useState<{
                     <PlayCircle className="h-4 w-4 mr-2" />
                     Test
                   </Button>
-                    
+
+
 
 
 
@@ -841,8 +862,8 @@ const [errors, setErrors] = useState<{
                     {isSaving ? 'Saving...' : isSaved ? 'Saved' : 'Save'}
                   </Button>
 
-                  
- 
+
+
                   <Button
                     type="submit"
                     data-testid="button-start-listening"
@@ -904,15 +925,14 @@ const [errors, setErrors] = useState<{
                     logs.map((log, idx) => (
                       <div
                         key={idx}
-                        className={`p-3 rounded-lg border text-xs ${
-                          log.type === 'log'
-                            ? 'bg-primary/5 border-primary/20'
-                            : log.type === 'status'
-                              ? 'bg-status-away/5 border-status-away/20'
-                              : log.type === 'error'
-                                ? 'bg-status-busy/5 border-status-busy/20'
-                                : 'bg-status-online/5 border-status-online/20'
-                        }`}
+                        className={`p-3 rounded-lg border text-xs ${log.type === 'log'
+                          ? 'bg-primary/5 border-primary/20'
+                          : log.type === 'status'
+                            ? 'bg-status-away/5 border-status-away/20'
+                            : log.type === 'error'
+                              ? 'bg-status-busy/5 border-status-busy/20'
+                              : 'bg-status-online/5 border-status-online/20'
+                          }`}
                       >
                         <div className="text-muted-foreground mb-2">
                           {log.timestamp.toLocaleTimeString()}
@@ -934,6 +954,4 @@ const [errors, setErrors] = useState<{
       </div>
     </div>
   );
-
-
 }

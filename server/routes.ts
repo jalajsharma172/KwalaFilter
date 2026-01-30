@@ -6,15 +6,7 @@ import fetch from 'node-fetch';
 import { startListening, getActiveSubscriptions } from "./listeners/logListener.js";
 import { getContractLatestBlockNumber } from './listeners/getBlockNumber.js';
 import { config } from './config.js';
-import { Connection, Keypair, PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
-import {
-  createMintToInstruction,
-  getAssociatedTokenAddress,
-  createAssociatedTokenAccountInstruction,
-  TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID
-} from "@solana/spl-token";
-import bs58 from "bs58";
+import { ethers } from "ethers";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -64,105 +56,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
   })
 
   // Solana Mint API
+  // Ethereum Mint API (Sepolia)
+  // Distributor Claim API
   app.post('/api/mint', async (req, res) => {
     try {
       const { walletAddress, amount } = req.body;
 
       if (!walletAddress || !amount) {
-        return res.status(400).json({ error: "Missing required fields" });
+        return res.status(400).json({ error: "Missing required fields: walletAddress, amount" });
       }
 
-      const RPC_ENDPOINT = "https://api.devnet.solana.com";
-      const MINT_ADDRESS = new PublicKey("jCKxk3E8yEjGX8WmWA7m3ShcqX6yTwiSJF9R5QzP5pv");
-      const MINT_DECIMALS = 9;
-
-      const userPublicKey = new PublicKey(walletAddress);
-      const amountToMint = BigInt(Math.floor(Number(amount) * Math.pow(10, MINT_DECIMALS)));
-
-      // 1. Setup Connection and Authority
-      const connection = new Connection(RPC_ENDPOINT);
-
-      // Check for private key in environment variables
-      // Trying common names: MINT_PRIVATE_KEY, PAYER_SECRET_KEY, PRIVATE_KEY, MINT_AUTHORITY_KEYPAIR
-      const privateKeyString = process.env.MINT_AUTHORITY_KEYPAIR || process.env.PAYER_SECRET_KEY || process.env.PRIVATE_KEY || process.env.MINT_PRIVATE_KEY;
-
-      if (!privateKeyString) {
-        throw new Error("Mint authority private key not configured on server.");
+      const privateKey = process.env.ETH_PRIVATE_KEY;
+      if (!privateKey) {
+        return res.status(500).json({ error: "Server misconfiguration: Mint authority key missing" });
       }
 
-      // Decode private key (support both base58 string and standard array format if needed, though typically string in simple envs)
-      let secretKey: Uint8Array;
-      try {
-        if (privateKeyString.includes("[")) {
-          secretKey = Uint8Array.from(JSON.parse(privateKeyString));
-        } else {
-          secretKey = bs58.decode(privateKeyString);
-        }
-      } catch (e) {
-        throw new Error("Invalid private key format.");
-      }
+      const rpcUrl = process.env.RPC_URL || "https://rpc.sepolia.org";
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const wallet = new ethers.Wallet(privateKey, provider);
 
-      const mintAuthority = Keypair.fromSecretKey(secretKey);
+      // Distributor Contract
+      const distributorAddress = "0xbFdFAF326C1cA399Da54954e570a165d3E7548B4";
+      const distributorAbi = [
+        "function nonces(address user) view returns (uint256)"
+      ];
+      const distributor = new ethers.Contract(distributorAddress, distributorAbi, provider);
 
-      // 2. Check/Create ATA
-      const userATA = await getAssociatedTokenAddress(
-        MINT_ADDRESS,
-        userPublicKey,
-        false,
-        TOKEN_PROGRAM_ID,
-        ASSOCIATED_TOKEN_PROGRAM_ID
+      // 1. Get Nonce from Contract
+      const nonce = await distributor.nonces(walletAddress);
+
+      // 2. Define Amount & Deadline
+      const amountInWei = ethers.parseUnits(amount.toString(), 18);
+      const deadline = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+
+      // 3. Chain ID (Sepolia = 11155111)
+      const network = await provider.getNetwork();
+      const chainId = network.chainId;
+
+      // 4. Create Message Hash (Must match Solidity: abi.encodePacked(...))
+      // keccak256(abi.encodePacked(block.chainid, address(this), user, amount, nonce, deadline))
+      const messageHash = ethers.solidityPackedKeccak256(
+        ["uint256", "address", "address", "uint256", "uint256", "uint256"],
+        [chainId, distributorAddress, walletAddress, amountInWei, nonce, deadline]
       );
 
-      const matchRequest = new Transaction();
+      // 5. Sign the binary hash
+      const signature = await wallet.signMessage(ethers.getBytes(messageHash));
 
-      // Check if ATA exists
-      const accountInfo = await connection.getAccountInfo(userATA);
+      console.log(`Generated signature for ${walletAddress}: nonce=${nonce}, amount=${amount}`);
 
-      if (!accountInfo) {
-        matchRequest.add(
-          createAssociatedTokenAccountInstruction(
-            userPublicKey, // Payer (User will sign)
-            userATA,
-            userPublicKey, // Owner
-            MINT_ADDRESS,
-            TOKEN_PROGRAM_ID,
-            ASSOCIATED_TOKEN_PROGRAM_ID
-          )
-        );
-      }
-
-      // 3. Add Mint Instruction
-      matchRequest.add(
-        createMintToInstruction(
-          MINT_ADDRESS,
-          userATA,
-          mintAuthority.publicKey,
-          amountToMint,
-          [],
-          TOKEN_PROGRAM_ID
-        )
-      );
-
-      // 4. Build Transaction
-      matchRequest.feePayer = userPublicKey;
-      const { blockhash } = await connection.getLatestBlockhash();
-      matchRequest.recentBlockhash = blockhash;
-
-      // 5. Partial Sign (Mint Authority)
-      matchRequest.partialSign(mintAuthority);
-
-      // 6. Serialize and Return
-      const serializedTx = matchRequest.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
+      return res.json({
+        status: "success",
+        signature,
+        nonce: nonce.toString(),
+        amount: amountInWei.toString(),
+        deadline: deadline.toString(),
+        distributorAddress,
+        chainId: chainId.toString()
       });
 
-      const base64Tx = serializedTx.toString("base64");
-
-      return res.json({ transaction: base64Tx });
-
     } catch (error: any) {
-      console.error("Mint API Error:", error);
+      console.error("Distributor Sign API Error:", error);
       return res.status(500).json({ error: error.message || String(error) });
     }
   });
@@ -339,6 +293,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET subscription_latest_blocks from Supabase
+  app.get('/api/subscription-latest-blocks', async (_req, res) => {
+    if (!config.SUPABASE_URL || !config.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: 'Supabase not configured on server' });
+    }
+
+    try {
+      const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/subscription_latest_blocks?select=*`;
+      const resp = await fetch(sbUrl, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+          'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      });
+
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        console.error('Supabase fetch subscription_latest_blocks error', resp.status, json);
+        return res.status(resp.status).json({ error: json });
+      }
+
+      return res.json(json || []);
+    } catch (err: any) {
+      console.error('Error fetching subscription_latest_blocks from Supabase:', err?.message || err);
+      return res.status(500).json({ error: err?.message || String(err) });
+    }
+  });
+
   // GET workflows from Supabase (returns workflow records)
   app.get('/api/workflows', async (_req, res) => {
     if (!config.SUPABASE_URL || !config.SUPABASE_SERVICE_ROLE_KEY) {
@@ -346,7 +330,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/Workflow?ActionStatus=eq.200`;
+      const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/Workflow`;
       const resp = await fetch(sbUrl, {
         method: 'GET',
         headers: {

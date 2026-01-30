@@ -4,12 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { CheckCircle, XCircle, Clock, Globe } from "lucide-react";
 
 export default function Dashboard() {
   const [workflows, setWorkflows] = useState<any[]>([]);
+  const [subscriptionBlocks, setSubscriptionBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  let balance = 1.083033;
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importYamlContent, setImportYamlContent] = useState("");
+
 
   useEffect(() => {
     let mounted = true;
@@ -36,10 +41,55 @@ export default function Dashboard() {
     };
   }, []);
 
+  // Fetch subscription_latest_blocks for the list
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/subscription-latest-blocks')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!mounted) return;
+        if (Array.isArray(data)) setSubscriptionBlocks(data);
+        else if (data && data.data && Array.isArray(data.data)) setSubscriptionBlocks(data.data);
+        else setSubscriptionBlocks([]);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch subscription blocks:', err);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const [, setLocation] = useLocation();
 
-  const successfulActions = workflows.filter((w) => Number(w.ActionStatus) === 200).length;
-  const failedActions = workflows.length - successfulActions;
+  // Task 2: Dynamic stats based on status codes
+  const successfulActions = workflows.filter((w) => String(w.ActionStatus) === '200').length;
+  // User explicitly asked for counts with status code 404 for failed actions
+  const failedActions = workflows.filter((w) => String(w.ActionStatus) === '404').length;
+
+  // Task 1: New static stats placeholders
+  const avgExecutionTime = "18.56s";
+  const chainsUsed = 2; // Base Sepolia, Ethereum Sepolia
+
+  // Helper to calculate "time ago"
+  const timeAgo = (dateString: string) => {
+    if (!dateString) return 'NA';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    if (diffInDays < 7) return `${diffInDays}d ago`;
+    const diffInWeeks = Math.floor(diffInDays / 7);
+    return `${diffInWeeks}w ago`;
+  };
+
   return (
     <div className="min-h-screen w-full bg-[#0d1117] text-white p-6">
       {/* HEADER */}
@@ -52,9 +102,7 @@ export default function Dashboard() {
           <div className="px-4 py-1 bg-green-900/40 text-green-400 rounded-lg border border-green-500/40">
             Connected: 0xd454e131...d4d598a3b5
           </div>
-          <div className="px-4 py-1 bg-gray-800 rounded-lg border border-gray-700">
-             {balance} KWALA
-          </div>
+
           <Button variant="outline" className="border-gray-600">
             Docs
           </Button>
@@ -67,34 +115,64 @@ export default function Dashboard() {
       {/* SUBTEXT */}
       <p className="text-gray-400 max-w-2xl mb-6">
         Your backendless Web3 automation workspace. Build, deploy, and monitor smart contract workflows using YAML.
-      </p>  
+      </p>
 
       {/* STATS GRID */}
       <div className="grid grid-cols-4 gap-4">
+        {/* Successful Actions */}
         <Card className="bg-gray-900 border-gray-700">
-          <CardContent className="pt-6">
-            <div className="text-lg">Successful Actions</div>
-            <div className="text-3xl font-bold text-green-400 mt-1">{successfulActions}</div>
+          <CardContent className="pt-6 flex items-center gap-4">
+            <CheckCircle className="h-10 w-10 text-green-500" />
+            <div>
+              <div className="text-sm text-gray-400">Successful Actions</div>
+              <div className="text-2xl font-bold text-white mt-1">{successfulActions}</div>
+              <div className="text-xs text-gray-500">total</div>
+            </div>
           </CardContent>
         </Card>
 
+        {/* Failed Actions */}
         <Card className="bg-gray-900 border-gray-700">
-          <CardContent className="pt-6">
-            <div className="text-lg">Failed Actions</div>
-            <div className="text-3xl font-bold text-red-400 mt-1">{failedActions}</div>
+          <CardContent className="pt-6 flex items-center gap-4">
+            <XCircle className="h-10 w-10 text-red-500" />
+            <div>
+              <div className="text-sm text-gray-400">Failed Actions</div>
+              <div className="text-2xl font-bold text-white mt-1">{failedActions}</div>
+              <div className="text-xs text-gray-500">total</div>
+            </div>
           </CardContent>
         </Card>
 
-    
+        {/* Avg Execution Time */}
+        <Card className="bg-gray-900 border-gray-700">
+          <CardContent className="pt-6 flex items-center gap-4">
+            <Clock className="h-10 w-10 text-blue-500" />
+            <div>
+              <div className="text-sm text-gray-400">Avg Execution Time</div>
+              <div className="text-2xl font-bold text-white mt-1">{avgExecutionTime}</div>
+              <div className="text-xs text-gray-500">average</div>
+            </div>
+          </CardContent>
+        </Card>
 
-    
+        {/* Chains Used */}
+        <Card className="bg-gray-900 border-gray-700">
+          <CardContent className="pt-6 flex items-center gap-4">
+            <Globe className="h-10 w-10 text-purple-500" />
+            <div>
+              <div className="text-sm text-gray-400">Chains Used</div>
+              <div className="text-2xl font-bold text-white mt-1">{chainsUsed}</div>
+              <div className="text-xs text-gray-500">Base Sepolia, Ethereum Sepolia</div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* TABS */}
       <Tabs defaultValue="workflows" className="mt-8">
         <TabsList className="bg-gray-800 border border-gray-700">
           <TabsTrigger value="bounty" className="px-6 data-[state=active]:bg-gray-700">
-             Bounty
+            Bounty
           </TabsTrigger>
           <TabsTrigger value="workflows" className="px-6 data-[state=active]:bg-gray-700">
             My Workflows
@@ -104,11 +182,11 @@ export default function Dashboard() {
 
       {/* WORKFLOWS HEADER */}
       <div className="flex justify-between items-center mt-8 mb-4">
-        <div className="text-2xl font-semibold">Your Deployed Workflows</div>
+        <div className="text-2xl font-semibold">Your Workflows Actions </div>
 
         <div className="flex items-center gap-3">
-          <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => setLocation('/')}>+ New Workflow</Button>
-          <Button variant="outline" className="border-gray-600">Import YAML</Button>
+          <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => setLocation('/dashboard')}>+ New Workflow</Button>
+          <Button variant="outline" className="border-gray-600" onClick={() => setIsImportModalOpen(true)}>Import YAML</Button>
           <Button variant="outline" className="border-gray-600">Browse Templates</Button>
         </div>
       </div>
@@ -127,16 +205,36 @@ export default function Dashboard() {
           <div className="text-gray-400">No workflows found.</div>
         )}
 
-        {!loading && workflows.map((w, i) => (
-          <Card key={w.id ?? i} className="bg-gray-900 border-gray-700">
-            <CardHeader>
-              <CardTitle className="text-xl">{w.ActionName || w.name || 'Unnamed Workflow'}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Separator className="bg-gray-700 my-2" />
-              <div className="flex justify-between text-sm text-gray-400">
-                <div>Status: {Number(w.ActionStatus) === 200 ? 'Success' : `Failed (${w.ActionStatus})`}</div>
-                <div>{w.created_at ? `Created: ${new Date(w.created_at).toLocaleString()}` : ''}</div>
+        {!loading && subscriptionBlocks.map((w, i) => (
+          <Card
+            key={w.id ?? i}
+            className="bg-gray-900 border-gray-700 hover:bg-gray-800 transition-colors cursor-pointer"
+            onClick={() => setLocation(`/workflow/${w.id}`)}
+          >
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start">
+                {/* Left Side: Name and Trigger/Frequency */}
+                <div className="flex flex-col gap-1">
+                  <div className="text-lg font-semibold text-white">
+                    {w.Workflow_Name || w.ActionName || 'Unnamed Workflow'}
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {w.times ? `${w.times} (Frequency)` : (w.event_signature ? 'Event Trigger' : '1h')}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Expired: NA
+                  </div>
+                </div>
+
+                {/* Right Side: Timing Stats */}
+                <div className="text-right flex flex-col gap-1">
+                  <div className="text-sm text-gray-400">
+                    <span className="text-gray-500">Last:</span> {w.created_at ? timeAgo(w.created_at) : 'NA'}
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    <span className="text-gray-500">Next:</span> NA
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -149,6 +247,46 @@ export default function Dashboard() {
           Need Help?
         </Button>
       </div>
+
+      {/* IMPORT YAML OVERLAY */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-2xl bg-[#0d1117] border-gray-700 shadow-2xl">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Import YAML Workflow</CardTitle>
+              <Button variant="ghost" size="icon" onClick={() => setIsImportModalOpen(false)}>
+                <XCircle className="h-5 w-5 text-gray-400 hover:text-white" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-gray-400">
+                Paste your workflow YAML configuration below.
+              </p>
+              <Textarea
+                value={importYamlContent}
+                onChange={(e) => setImportYamlContent(e.target.value)}
+                placeholder="Paste YAML here..."
+                className="font-mono text-sm min-h-[300px] bg-gray-900 border-gray-700 text-white"
+              />
+              <div className="flex justify-end gap-3 mt-4">
+                <Button variant="outline" onClick={() => setIsImportModalOpen(false)} className="border-gray-600">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    // Reset content if desired, or keep it. Keeping it for now.
+                    // setImportYamlContent(""); 
+                  }}
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                  Import Workflow
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

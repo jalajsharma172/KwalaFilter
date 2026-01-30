@@ -4,6 +4,7 @@ import { getContractLatestBlockNumber } from "./listeners/getBlockNumber.js";
 import { log } from './app.js';
 import { max } from 'date-fns';
 import { config } from './config.js';
+import { chargeUser } from './billing.js';
 /**
  * Start running a script/command at a fixed interval.
  * Default interval: 3 minutes
@@ -146,6 +147,37 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
 
               const result = await response.json().catch(() => null);
               console.log("📩 API Response:", result);
+
+              // BILLING INTEGRATION: Charge User if Action was Successful
+              if (response.ok) {
+                // Hackathon Heuristic: Assume 'user' address is available in params or use contractAddress
+                // Ideally, the event log should have a 'user' or 'from' argument.
+                // For now, we will try to find a 'user' or 'sender' in processedParams, 
+                // or default to charging the Contract Deployer (if that was the logic) 
+                // BUT for this specific request: "Charge 0.01 KWALA during action execution"
+
+                // We will look for an address in the decodedData.args to charge.
+                // If args[0] is an address, charge it.
+                let userToCharge = null;
+
+                if (decodedData.args && (decodedData.args as any[]).length > 0) {
+                  for (const arg of (decodedData.args as any[])) {
+                    if (typeof arg === 'string' && arg.startsWith('0x') && arg.length === 42) {
+                      userToCharge = arg;
+                      break;
+                    }
+                  }
+                }
+
+                if (userToCharge) {
+                  console.log(`[Billing] Found user in event args: ${userToCharge}. Initiating charge...`);
+                  // Fire and forget (don't block the loop too long, but for demo maybe await is safer to show logs)
+                  await chargeUser(userToCharge);
+                } else {
+                  console.log("[Billing] No user address found in event args to charge. Skipping.");
+                }
+              }
+
             } catch (err) {
               apicall = false;
               console.error("❌ API Error:", err);
