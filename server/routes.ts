@@ -9,6 +9,59 @@ import { config } from './config.js';
 import { ethers } from "ethers";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Price Alerts API
+  app.post('/api/price-alerts', async (req, res) => {
+    try {
+      const { workflowName, chain, targetPrice, api, body } = req.body;
+
+      if (!workflowName || !targetPrice) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      // Validate JSON body
+      let parsedBody = body;
+      try {
+        if (typeof body === 'string') {
+          parsedBody = JSON.parse(body);
+        }
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid JSON in body' });
+      }
+
+      // Use Fetch to Supabase REST API
+      const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/PriceAlerts`;
+
+      const response = await fetch(sbUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+          'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
+          WorkflowName: workflowName,
+          Chain: chain,
+          The: parseFloat(targetPrice),
+          API: api,
+          Body: parsedBody
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Supabase error:', response.status, errorText);
+        throw new Error(`Supabase error: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      res.json({ success: true, data });
+    } catch (error: any) {
+      console.error('Error creating price alert:', error);
+      res.status(500).json({ error: error.message || 'Internal server error' });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Health endpoint

@@ -13,8 +13,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Activity, StopCircle, PlayCircle, ExternalLink, Zap, Database, Copy, Check } from "lucide-react";
+import { Activity, StopCircle, PlayCircle, ExternalLink, Zap, Database, Copy, Check, Settings, RefreshCw, Bell } from "lucide-react";
 import { YamlGenerator } from "@/components/YamlGenerator";
+import { motion } from "framer-motion";
 
 type StatusType = 'idle' | 'connecting' | 'listening' | 'catching-up' | 'error';
 //Ready to start listening - Ye Workflow ki baat ho rahi hai
@@ -58,6 +59,14 @@ export default function EventListener() {
     api?: string;
     latestBlockNumber?: string;      // ✅ ADD THIS
   }>({});
+
+  // Flip Card State
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [targetPrice, setTargetPrice] = useState('1000.50');
+  const [token, setToken] = useState('Ethereum(WETH)');
+  const [notifUrl, setNotifUrl] = useState('https://workflow-notification-test.kalp.network/push_notification');
+  const [notifBody, setNotifBody] = useState(''); // Renamed/New state for Body
+  const [workflowName, setWorkflowName] = useState(''); // New state for Workflow Name
 
 
 
@@ -560,350 +569,499 @@ export default function EventListener() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Configuration Panel */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-primary" />
-                Configuration
-              </CardTitle>
-              <CardDescription>Enter contract address and event topic to monitor</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <form onSubmit={handleStartListening} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="address">Contract  Address</Label>
-                  <Input
-                    id="address"
-                    data-testid="input-contract-address"
-                    placeholder="0x..."
-                    value={address}
-                    onChange={(e) => { setAddress(e.target.value); setIsFormValid(false); setErrors(prev => ({ ...prev, address: undefined })); }}
-                    className="font-mono"
-                  />
-                  <p className="text-xs text-muted-foreground">Ethereum contract address (42 characters: 0x + 40 hex)</p>
-                  {errors.address && <p className="text-xs text-red-400 mt-1">{errors.address}</p>}
-                  <button
-                    type="button"
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                    onClick={() => copyToClipboard(exampleAddress, 'addr')}
+          {/* Configuration Panel with Flip Animation */}
+          <div className="relative h-full w-full" style={{ perspective: "1000px" }}>
+            <motion.div
+              className="relative w-full h-full"
+              initial={false}
+              animate={{ rotateY: isFlipped ? 180 : 0 }}
+              transition={{ duration: 0.6, type: "spring", stiffness: 260, damping: 20 }}
+              style={{ transformStyle: "preserve-3d" }}
+            >
+              {/* FRONT FACE */}
+              <div className="w-full h-full bg-background" style={{ backfaceVisibility: "hidden" }}>
+                <Card className="h-full relative">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-4 right-4 z-10 text-muted-foreground hover:text-foreground"
+                    onClick={() => setIsFlipped(true)}
                   >
-                    {copied === 'addr' ? (
-                      <>
-                        <Check className="h-3 w-3" /> Copied example
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3 w-3" /> Use example (USDC on Sepolia)
-                      </>
-                    )}
-                  </button>
-                </div>
+                    <Settings className="h-5 w-5" />
+                  </Button>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Database className="h-5 w-5 text-primary" />
+                      Configuration
+                    </CardTitle>
+                    <CardDescription>Enter contract address and event topic to monitor</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <form onSubmit={handleStartListening} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="address">Contract Address</Label>
+                        <Input
+                          id="address"
+                          data-testid="input-contract-address"
+                          placeholder="0x..."
+                          value={address}
+                          onChange={(e) => {
+                            setAddress(e.target.value);
+                            setIsFormValid(false);
+                            setErrors((prev) => ({ ...prev, address: undefined }));
+                          }}
+                          className="font-mono"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Ethereum contract address (42 characters: 0x + 40 hex)
+                        </p>
+                        {errors.address && <p className="text-xs text-red-400 mt-1">{errors.address}</p>}
+                        <button
+                          type="button"
+                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                          onClick={() => copyToClipboard(exampleAddress, 'addr')}
+                        >
+                          {copied === 'addr' ? (
+                            <>
+                              <Check className="h-3 w-3" /> Copied example
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3 w-3" /> Use example (USDC on Sepolia)
+                            </>
+                          )}
+                        </button>
+                      </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="topic0">Event Topic (topic0)</Label>
-                  <Input
-                    id="topic0"
-                    data-testid="input-event-topic"
-                    placeholder="0x..."
-                    value={topic0}
-                    onChange={(e) => { setTopic0(e.target.value); setIsFormValid(false); setErrors(prev => ({ ...prev, topic0: undefined })); setIsSaved(false); }}
-                    className="font-mono text-xs"
-                  />
+                      <div className="space-y-2">
+                        <Label htmlFor="topic0">Event Topic (topic0)</Label>
+                        <Input
+                          id="topic0"
+                          data-testid="input-event-topic"
+                          placeholder="0x..."
+                          value={topic0}
+                          onChange={(e) => {
+                            setTopic0(e.target.value);
+                            setIsFormValid(false);
+                            setErrors((prev) => ({ ...prev, topic0: undefined }));
+                            setIsSaved(false);
+                          }}
+                          className="font-mono text-xs"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Event signature hash (0x + 64 hex characters)
+                        </p>
+                        {errors.topic0 && <p className="text-xs text-red-400 mt-1">{errors.topic0}</p>}
+                        <button
+                          type="button"
+                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                          onClick={() => copyToClipboard(exampleTopic, 'topic')}
+                        >
+                          {copied === 'topic' ? (
+                            <>
+                              <Check className="h-3 w-3" /> Copied example
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3 w-3" /> Use example (Transfer event)
+                            </>
+                          )}
+                        </button>
+                      </div>
 
+                      <div className="space-y-2">
+                        <Label htmlFor="latestBlockNumber">Latest Block Number</Label>
+                        <Input
+                          id="latestBlockNumber"
+                          data-testid="input-latest-block-number"
+                          placeholder="0"
+                          value={latestBlockNumber}
+                          onChange={(e) => {
+                            setLatestBlockNumber(e.target.value);
+                            setIsFormValid(false);
+                            setErrors((prev) => ({ ...prev, latestBlockNumber: undefined }));
+                            setIsSaved(false);
+                          }}
+                          className="font-mono text-xs"
+                        />
+                        {errors.latestBlockNumber && (
+                          <p className="text-xs text-red-400 mt-1">{errors.latestBlockNumber}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          Start monitoring from this block height.
+                        </p>
+                      </div>
 
+                      <div className="space-y-2">
+                        <Label htmlFor="abi">Contract ABI</Label>
+                        <textarea
+                          id="abi"
+                          data-testid="input-contract-abi"
+                          placeholder="Paste contract ABI here..."
+                          value={abi}
+                          onChange={(e) => {
+                            setAbi(e.target.value);
+                            setIsFormValid(false);
+                            setErrors((prev) => ({ ...prev, abi: undefined }));
+                          }}
+                          className="font-mono text-xs w-full h-32 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md border"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Paste the contract ABI (Application Binary Interface) to decode logs.
+                        </p>
+                        {errors.abi && <p className="text-xs text-red-400 mt-1">{errors.abi}</p>}
+                      </div>
 
+                      {/* Action configuration block */}
+                      <div className="mt-4 p-4 rounded-lg border bg-muted/5">
+                        <h4 className="text-sm font-semibold mb-2">Action 1</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor="actionName">Action Name *</Label>
+                            <Input
+                              id="actionName"
+                              placeholder="Enter action name"
+                              value={actionName}
+                              onChange={(e) => setActionName(e.target.value)}
+                              className="font-mono text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="actionType">Action Type *</Label>
+                            <select
+                              id="actionType"
+                              value={actionType}
+                              onChange={(e) => setActionType(e.target.value)}
+                              className="w-full rounded-md border bg-input text-foreground text-xs p-2"
+                            >
+                              <option value="POST">POST (API Call)</option>
+                              <option value="CALL">CALL (Smart Contract)</option>
+                            </select>
+                          </div>
+                        </div>
 
+                        {actionType === 'POST' ? (
+                          <>
+                            <div className="mt-3">
+                              <Label htmlFor="actionEndpoint">API Endpoint *</Label>
+                              <Input
+                                id="actionEndpoint"
+                                placeholder="https://api.example.com/webhook"
+                                value={actionEndpoint}
+                                onChange={(e) => setActionEndpoint(e.target.value)}
+                                className="font-mono text-xs"
+                              />
+                            </div>
 
+                            <div className="mt-3">
+                              <Label htmlFor="actionPayload">API Payload (JSON) *</Label>
+                              <textarea
+                                id="actionPayload"
+                                placeholder="{}"
+                                value={actionPayload}
+                                onChange={(e) => setActionPayload(e.target.value)}
+                                className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md border"
+                              />
+                            </div>
 
-                  <p className="text-xs text-muted-foreground">
-                    Event signature hash (0x + 64 hex characters) Convert :
-                    UserRegistered(uint256) to 0x6b1da4  <u><a href="https://web3tools.chainstacklabs.com/generate-event-signature" target="_blank" rel="noopener noreferrer">Convert </a></u>
-                  </p>
-                  {errors.topic0 && <p className="text-xs text-red-400 mt-1">{errors.topic0}</p>}
-                  <button
-                    type="button"
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                    onClick={() => copyToClipboard(exampleTopic, 'topic')}
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <Label htmlFor="actionRetries">Retries Until Success *</Label>
+                                <Input
+                                  id="actionRetries"
+                                  type="number"
+                                  min={0}
+                                  value={actionRetries as any}
+                                  onChange={(e) =>
+                                    setActionRetries(e.target.value === '' ? '' : Number(e.target.value))
+                                  }
+                                  className="font-mono text-xs"
+                                />
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          // CALL (Smart Contract) fields
+                          <>
+                            <div className="mt-3">
+                              <Label htmlFor="targetContract">Target Contract *</Label>
+                              <Input
+                                id="targetContract"
+                                placeholder="0x..."
+                                value={targetContract}
+                                onChange={(e) => setTargetContract(e.target.value)}
+                                className="font-mono text-xs"
+                              />
+                            </div>
+
+                            <div className="mt-3">
+                              <Label htmlFor="targetFunction">Target Function *</Label>
+                              <Input
+                                id="targetFunction"
+                                placeholder="function updateNFT(string memory userId, uint256 points)"
+                                value={targetFunction}
+                                onChange={(e) => setTargetFunction(e.target.value)}
+                                className="font-mono text-xs"
+                              />
+                            </div>
+
+                            <div className="mt-3">
+                              <Label htmlFor="chainId">Chain ID *</Label>
+                              <select
+                                id="chainId"
+                                value={chainId}
+                                onChange={(e) => setChainId(e.target.value)}
+                                className="w-full rounded-md border bg-input text-foreground text-xs p-2"
+                              >
+                                <option value="1">Ethereum Mainnet (1)</option>
+                                <option value="11155111">Sepolia (11155111)</option>
+                                <option value="5">Goerli (5)</option>
+                              </select>
+                            </div>
+
+                            <div className="mt-3">
+                              <Label htmlFor="targetParams">Target Parameters (one per line)</Label>
+                              <textarea
+                                id="targetParams"
+                                placeholder="re.event(0)\nre.event(1)"
+                                value={targetParams}
+                                onChange={(e) => setTargetParams(e.target.value)}
+                                className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md border"
+                              />
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <Label htmlFor="actionRetries">Retries Until Success *</Label>
+                                <Input
+                                  id="actionRetries"
+                                  type="number"
+                                  min={0}
+                                  value={actionRetries as any}
+                                  onChange={(e) =>
+                                    setActionRetries(e.target.value === '' ? '' : Number(e.target.value))
+                                  }
+                                  className="font-mono text-xs"
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="space-y-2 flex gap-2">
+                        <Button
+                          type="button"
+                          data-testid="button-test-inputs"
+                          onClick={handleTestInputs}
+                          className="flex-1"
+                        >
+                          <PlayCircle className="h-4 w-4 mr-2" />
+                          Test
+                        </Button>
+
+                        <Button
+                          type="button"
+                          data-testid="button-save-subscription"
+                          onClick={SaveInputsToSupabase}
+                          disabled={!isFormValid || isSaving}
+                          className="flex-1"
+                        >
+                          <PlayCircle className="h-4 w-4 mr-2" />
+                          {isSaving ? 'Saving...' : isSaved ? 'Saved' : 'Save'}
+                        </Button>
+
+                        <Button
+                          type="submit"
+                          data-testid="button-start-listening"
+                          disabled={
+                            status === 'listening' ||
+                            status === 'catching-up' ||
+                            status === 'connecting' ||
+                            !isFormValid ||
+                            !isSaved
+                          }
+                          className="flex-1"
+                        >
+                          <PlayCircle className="h-4 w-4 mr-2" />
+                          Start Listening
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          data-testid="button-stop-listening"
+                          disabled={status !== 'listening' && status !== 'catching-up'}
+                          onClick={handleStopListening}
+                        >
+                          <StopCircle className="h-4 w-4 mr-2" />
+                          Stop
+                        </Button>
+                      </div>
+                    </form>
+
+                    <div className="rounded-lg bg-muted/50 p-3 space-y-2">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase">
+                        Quick Guide
+                      </h4>
+                      <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                        <li>Find contract address on block explorer (Etherscan)</li>
+                        <li>
+                          Get event topic by hashing: keccak256("EventName(type1,type2,...)")
+                        </li>
+                        <li>Click "Start Listening" to begin monitoring</li>
+                        <li>Logs appear in real-time as events are emitted</li>
+                      </ul>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* BACK FACE */}
+              <div
+                className="absolute top-0 left-0 w-full h-full"
+                style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+              >
+                <Card className="h-full relative border-indigo-500/20 bg-black/95 backdrop-blur-sm">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-4 right-4 z-10 text-indigo-400 hover:text-indigo-300"
+                    onClick={() => setIsFlipped(false)}
                   >
-                    {copied === 'topic' ? (
-                      <>
-                        <Check className="h-3 w-3" /> Copied example
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3 w-3" /> Use example (Transfer event)
-                      </>
-                    )}
-                  </button>
-                </div>
+                    <Settings className="h-5 w-5" />
+                  </Button>
 
-
-                <div className="space-y-2">
-                  <Label htmlFor="latestBlockNumber">Latest Block Number</Label>
-                  <Input
-                    id="latestBlockNumber"
-                    data-testid="input-latest-block-number"
-                    placeholder="0x..."
-                    value={latestBlockNumber}
-                    onChange={(e) => { setLatestBlockNumber(e.target.value); setIsFormValid(false); setErrors(prev => ({ ...prev, latestBlockNumber: undefined })); setIsSaved(false); }}
-                    className="font-mono text-xs"
-                  />
-                  {errors.latestBlockNumber && (
-                    <p className="text-xs text-red-400 mt-1">{errors.latestBlockNumber}</p>
-                  )}
-
-                </div>
-
-
-
-
-
-
-
-
-                <p className="text-xs text-muted-foreground">
-                  you need to provide the latest block number.
-                </p>
-
-
-
-
-                <div className="space-y-2">
-                  <Label htmlFor="abi">Contract ABI</Label>
-                  <textarea
-                    id="abi"
-                    data-testid="input-contract-abi"
-                    placeholder="Paste contract ABI here..."
-                    value={abi}
-                    onChange={(e) => { setAbi(e.target.value); setIsFormValid(false); setErrors(prev => ({ ...prev, abi: undefined })); }}
-                    className="font-mono text-xs w-full h-32 bg-input text-foreground placeholder:text-muted-foreground"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Paste the contract ABI (Application Binary Interface) to decode logs.
-                  </p>
-                  {errors.abi && <p className="text-xs text-red-400 mt-1">{errors.abi}</p>}
-                </div>
-
-
-
-
-
-
-
-
-
-
-                {/* Action configuration block */}
-                <div className="mt-4 p-4 rounded-lg border bg-muted/5">
-                  <h4 className="text-sm font-semibold mb-2">Action 1</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="actionName">Action Name *</Label>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-indigo-400 text-lg">
+                      <RefreshCw className="h-5 w-5" />
+                      Recurring Source Configuration
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6 pt-4">
+                    {/* Workflow Name */}
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Workflow Name
+                      </Label>
                       <Input
-                        id="actionName"
-                        placeholder="Enter action name"
-                        value={actionName}
-                        onChange={(e) => setActionName(e.target.value)}
-                        className="font-mono text-xs"
+                        value={workflowName}
+                        onChange={(e) => setWorkflowName(e.target.value)}
+                        placeholder="My Recurring Workflow"
+                        className="font-mono bg-white/5 border-white/10"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="actionType">Action Type *</Label>
-                      <select
-                        id="actionType"
-                        value={actionType}
-                        onChange={(e) => setActionType(e.target.value)}
-                        className="w-full rounded-md border bg-input text-foreground text-xs p-2"
-                      >
-                        <option value="POST">POST (API Call)</option>
-                        <option value="CALL">CALL (Smart Contract)</option>
-                      </select>
-                    </div>
-                  </div>
 
-                  {actionType === 'POST' ? (
-                    <>
-                      <div className="mt-3">
-                        <Label htmlFor="actionEndpoint">API Endpoint *</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Target Price
+                        </Label>
                         <Input
-                          id="actionEndpoint"
-                          placeholder="https://api.example.com/webhook"
-                          value={actionEndpoint}
-                          onChange={(e) => setActionEndpoint(e.target.value)}
-                          className="font-mono text-xs"
+                          value={targetPrice}
+                          onChange={(e) => setTargetPrice(e.target.value)}
+                          className="font-mono bg-white/5 border-white/10"
                         />
                       </div>
-
-                      <div className="mt-3">
-                        <Label htmlFor="actionPayload">API Payload (JSON) *</Label>
-                        <textarea
-                          id="actionPayload"
-                          placeholder="{}"
-                          value={actionPayload}
-                          onChange={(e) => setActionPayload(e.target.value)}
-                          className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md"
-                        />
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <Label htmlFor="actionRetries">Retries Until Success *</Label>
-                          <Input
-                            id="actionRetries"
-                            type="number"
-                            min={0}
-                            value={actionRetries as any}
-                            onChange={(e) => setActionRetries(e.target.value === '' ? '' : Number(e.target.value))}
-                            className="font-mono text-xs"
-                          />
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    // CALL (Smart Contract) fields
-                    <>
-                      <div className="mt-3">
-                        <Label htmlFor="targetContract">Target Contract *</Label>
-                        <Input
-                          id="targetContract"
-                          placeholder="0x..."
-                          value={targetContract}
-                          onChange={(e) => setTargetContract(e.target.value)}
-                          className="font-mono text-xs"
-                        />
-                      </div>
-
-                      <div className="mt-3">
-                        <Label htmlFor="targetFunction">Target Function *</Label>
-                        <Input
-                          id="targetFunction"
-                          placeholder="function updateNFT(string memory userId, uint256 points)"
-                          value={targetFunction}
-                          onChange={(e) => setTargetFunction(e.target.value)}
-                          className="font-mono text-xs"
-                        />
-                      </div>
-
-                      <div className="mt-3">
-                        <Label htmlFor="chainId">Chain ID *</Label>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Token
+                        </Label>
                         <select
-                          id="chainId"
-                          value={chainId}
-                          onChange={(e) => setChainId(e.target.value)}
-                          className="w-full rounded-md border bg-input text-foreground text-xs p-2"
+                          className="flex h-9 w-full rounded-md border border-white/10 bg-white/5 px-3 py-1 text-sm shadow-sm transition-colors text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          value={token}
+                          onChange={(e) => setToken(e.target.value)}
                         >
-                          <option value="1">Ethereum Mainnet (1)</option>
-                          <option value="11155111">Sepolia (11155111)</option>
-                          <option value="5">Goerli (5)</option>
+                          <option className="bg-background">Ethereum(WETH)</option>
+                          <option className="bg-background">USDC</option>
+                          <option className="bg-background">DAI</option>
                         </select>
                       </div>
+                    </div>
 
-                      <div className="mt-3">
-                        <Label htmlFor="targetParams">Target Parameters (one per line)</Label>
-                        <textarea
-                          id="targetParams"
-                          placeholder="re.event(0)\nre.event(1)"
-                          value={targetParams}
-                          onChange={(e) => setTargetParams(e.target.value)}
-                          className="font-mono text-xs w-full h-28 bg-input text-foreground placeholder:text-muted-foreground p-2 rounded-md"
-                        />
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <Label htmlFor="actionRetries">Retries Until Success *</Label>
+                    <div className="pt-6 border-t border-white/10">
+                      <h4 className="flex items-center gap-2 text-indigo-400 font-semibold mb-4">
+                        <Bell className="h-4 w-4" />
+                        Notification Settings
+                      </h4>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Action Status Notification POST URL
+                          </Label>
                           <Input
-                            id="actionRetries"
-                            type="number"
-                            min={0}
-                            value={actionRetries as any}
-                            onChange={(e) => setActionRetries(e.target.value === '' ? '' : Number(e.target.value))}
-                            className="font-mono text-xs"
+                            value={notifUrl}
+                            onChange={(e) => setNotifUrl(e.target.value)}
+                            className="font-mono bg-white/5 border-white/10 text-xs"
                           />
                         </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Body
+                          </Label>
+                          <textarea
+                            value={notifBody}
+                            onChange={(e) => setNotifBody(e.target.value)}
+                            placeholder={`{\n  "text": "Price ETH :re.event(0)",\n  "chat_id": "7074622623"\n}`}
+                            className="font-mono text-xs w-full h-32 bg-white/5 text-foreground placeholder:text-muted-foreground p-3 rounded-md border border-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                        </div>
+
+                        <Button
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white mt-4"
+                          onClick={async () => {
+                            try {
+                              // Validate body JSON
+                              try {
+                                JSON.parse(notifBody);
+                              } catch (e) {
+                                setStatus('error');
+                                setStatusMessage('Invalid JSON in Body field');
+                                return;
+                              }
+
+                              setStatus('connecting');
+                              setStatusMessage('Saving Price Alert...');
+
+                              const response = await fetch('/api/price-alerts', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                  workflowName,
+                                  chain: token,
+                                  targetPrice,
+                                  api: notifUrl,
+                                  body: notifBody
+                                }),
+                              });
+
+                              const data = await response.json();
+
+                              if (!response.ok) {
+                                throw new Error(data.error || 'Failed to save price alert');
+                              }
+
+                              console.log("Saved Price Alert:", data);
+                              setStatus('idle');
+                              setStatusMessage('Price Alert Saved!');
+                              setIsFlipped(false); // Flip back on success
+                            } catch (error: any) {
+                              console.error("Error saving price alert:", error);
+                              setStatus('error');
+                              setStatusMessage(error.message || 'Error saving Price Alert');
+                            }
+                          }}
+                        >
+                          Save Workflow Configuration
+                        </Button>
                       </div>
-                    </>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Button
-                    type="button"
-                    data-testid="button-test-inputs"
-                    onClick={handleTestInputs}
-                    className="flex-1"
-                  >
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    Test
-                  </Button>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-                  <Button
-                    type="button"
-                    data-testid="button-save-subscription"
-                    onClick={SaveInputsToSupabase}
-                    disabled={!isFormValid || isSaving}
-                    className="flex-1"
-                  >
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    {isSaving ? 'Saving...' : isSaved ? 'Saved' : 'Save'}
-                  </Button>
-
-
-
-                  <Button
-                    type="submit"
-                    data-testid="button-start-listening"
-                    disabled={
-                      status === 'listening' ||
-                      status === 'catching-up' ||
-                      status === 'connecting' ||
-                      !isFormValid ||
-                      !isSaved
-                    }
-                    className="flex-1"
-                  >
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    Start Listening
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    data-testid="button-stop-listening"
-                    disabled={status !== 'listening' && status !== 'catching-up'}
-                    onClick={handleStopListening}
-                  >
-                    <StopCircle className="h-4 w-4 mr-2" />
-                    Stop
-                  </Button>
-                </div>
-
-              </form>
-
-              <div className="rounded-lg bg-muted/50 p-3 space-y-2">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase">Quick Guide</h4>
-                <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                  <li>Find contract address on block explorer (Etherscan)</li>
-                  <li>Get event topic by hashing: keccak256("EventName(type1,type2,...)")</li>
-                  <li>Click "Start Listening" to begin monitoring</li>
-                  <li>Logs appear in real-time as events are emitted</li>
-                </ul>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
-            </CardContent>
-          </Card>
+            </motion.div>
+          </div>
 
           {/* Event Logs Panel */}
           <Card className="flex flex-col">
