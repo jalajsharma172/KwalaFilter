@@ -5,6 +5,7 @@ import { log } from './app.js';
 import { max } from 'date-fns';
 import { config } from './config.js';
 import { chargeUser } from './billing.js';
+import { ethers } from "ethers";
 /**
  * Start running a script/command at a fixed interval.
  * Default interval: 3 minutes
@@ -170,9 +171,19 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
                 }
 
                 if (userToCharge) {
+                  // Determine fee from params or default
+                  let feeAmount: bigint | undefined;
+                  if (paramsjson && paramsjson.kwala_fee) {
+                    try {
+                      feeAmount = ethers.parseUnits(String(paramsjson.kwala_fee), 18);
+                    } catch (e) {
+                      console.warn("[Billing] Invalid kwala_fee in params, using default.");
+                    }
+                  }
+
                   console.log(`[Billing] Found user in event args: ${userToCharge}. Initiating charge...`);
                   // Fire and forget (don't block the loop too long, but for demo maybe await is safer to show logs)
-                  await chargeUser(userToCharge);
+                  await chargeUser(userToCharge, feeAmount);
                 } else {
                   console.log("[Billing] No user address found in event args to charge. Skipping.");
                 }

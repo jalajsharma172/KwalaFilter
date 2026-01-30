@@ -7,6 +7,7 @@ import { startListening, getActiveSubscriptions } from "./listeners/logListener.
 import { getContractLatestBlockNumber } from './listeners/getBlockNumber.js';
 import { config } from './config.js';
 import { ethers } from "ethers";
+import { SERVER_WALLET_ADDRESS, TOKEN_ADDRESS } from './billing.js';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Price Alerts API
@@ -107,6 +108,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   })
+
+
+  // Billing Config API
+  app.get('/api/config/billing', (_req, res) => {
+    if (!SERVER_WALLET_ADDRESS || !TOKEN_ADDRESS) {
+      return res.status(500).json({ error: 'Billing not configured on server' });
+    }
+    res.json({
+      tokenAddress: TOKEN_ADDRESS,
+      serverWalletAddress: SERVER_WALLET_ADDRESS,
+      defaultFee: "0.001"
+    });
+  });
 
   // Solana Mint API
   // Ethereum Mint API (Sepolia)

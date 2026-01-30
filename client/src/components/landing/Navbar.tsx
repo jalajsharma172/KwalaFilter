@@ -41,18 +41,29 @@ export default function Navbar() {
     const [numberofTokens, setNumberOfTokens] = useState(0);
     const [tokenBalance, setTokenBalance] = useState<number | null>(null);
 
-    const TOKEN_ADDRESS = "0x807a8c2664c116259ba2af0a070D0B477498b12f";
-    const SERVER_WALLET = "0x1B96Ad5aE222c4e7F6Eb9a5d772aDB7974E0a652"; // Hardcoded for demo, usually from env or API
+    const [tokenAddress, setTokenAddress] = useState("");
+    const [serverWallet, setServerWallet] = useState("");
+
+    useEffect(() => {
+        fetch("/api/config/billing")
+            .then(res => res.json())
+            .then(data => {
+                if (data.tokenAddress) setTokenAddress(data.tokenAddress);
+                if (data.serverWalletAddress) setServerWallet(data.serverWalletAddress);
+            })
+            .catch(err => console.error("Failed to fetch billing config:", err));
+    }, []);
 
     // Read Balance
     const { data: balanceData } = useReadContract({
         contract: getContract({
             client,
             chain: sepoliaChain,
-            address: TOKEN_ADDRESS,
+            address: tokenAddress || "0x0000000000000000000000000000000000000000",
         }),
         method: "function balanceOf(address) view returns (uint256)",
         params: [activeAccount?.address || "0x0000000000000000000000000000000000000000"],
+        queryOptions: { enabled: !!tokenAddress && !!activeAccount }
     });
 
     // Read Allowance
@@ -60,24 +71,25 @@ export default function Navbar() {
         contract: getContract({
             client,
             chain: sepoliaChain,
-            address: TOKEN_ADDRESS,
+            address: tokenAddress || "0x0000000000000000000000000000000000000000",
         }),
         method: "function allowance(address owner, address spender) view returns (uint256)",
         params: [
             activeAccount?.address || "0x0000000000000000000000000000000000000000",
-            SERVER_WALLET
+            serverWallet || "0x0000000000000000000000000000000000000000"
         ],
+        queryOptions: { enabled: !!tokenAddress && !!serverWallet && !!activeAccount }
     });
 
     // Approval Transaction
     const handleApprove = () => {
-        if (!activeAccount) return;
+        if (!activeAccount || !tokenAddress || !serverWallet) return;
         setLoading(true);
-        const contract = getContract({ client, chain: sepoliaChain, address: TOKEN_ADDRESS });
+        const contract = getContract({ client, chain: sepoliaChain, address: tokenAddress });
         const transaction = prepareContractCall({
             contract,
             method: "function approve(address spender, uint256 amount)",
-            params: [SERVER_WALLET, BigInt(10000000000000000000)], // 10 Tokens
+            params: [serverWallet, BigInt(10000000000000000000)], // 10 Tokens
         });
         sendTransaction(transaction, {
             onSuccess: () => {
@@ -243,8 +255,8 @@ export default function Navbar() {
                             {/* Allowance / Billing Status */}
                             {allowanceData !== undefined && (
                                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm ${Number(toEther(allowanceData)) > 0.1
-                                        ? "bg-green-500/10 border-green-500/20 text-green-400"
-                                        : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
+                                    ? "bg-green-500/10 border-green-500/20 text-green-400"
+                                    : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
                                     }`}>
                                     <span>Billing:</span>
                                     <span className="font-bold">

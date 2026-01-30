@@ -20,42 +20,46 @@ if (!PRIVATE_KEY || !RPC_URL) {
 }
 
 const provider = new ethers.JsonRpcProvider(RPC_URL);
-const wallet = PRIVATE_KEY ? new ethers.Wallet(PRIVATE_KEY, provider) : null;
-const tokenContract = wallet ? new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, wallet) : null;
+export const wallet = PRIVATE_KEY ? new ethers.Wallet(PRIVATE_KEY, provider) : null;
+export const tokenContract = wallet ? new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, wallet) : null;
+
+export const SERVER_WALLET_ADDRESS = wallet ? wallet.address : null;
+export { TOKEN_ADDRESS };
 
 /**
- * Charges a user a fixed fee of 0.01 KWALA.
+ * Charges a user a fee (default 0.01 KWALA).
  * Requires the user to have approved the Server Wallet previously.
  * 
  * @param userAddress The address of the user to charge
+ * @param amount Amount to charge in Wei (BigInt). Defaults to FEE_AMOUNT (0.01).
  * @returns { success: boolean, message: string, txHash?: string }
  */
-export async function chargeUser(userAddress: string) {
+export async function chargeUser(userAddress: string, amount: bigint = FEE_AMOUNT) {
     if (!wallet || !tokenContract) {
         return { success: false, message: "Billing System not configured (Wallet/Contract missing)" };
     }
 
     try {
-        console.log(`[Billing] Attempting to charge ${userAddress} ...`);
+        console.log(`[Billing] Attempting to charge ${userAddress} amount: ${ethers.formatUnits(amount, 18)} KWALA ...`);
 
         // 1. Check Allowance
         // user must have called approve(SERVER_WALLET, amount)
         const allowance = await tokenContract.allowance(userAddress, wallet.address);
-        if (allowance < FEE_AMOUNT) {
-            console.warn(`[Billing] Insufficient allowance for ${userAddress}. Has: ${allowance}, Needs: ${FEE_AMOUNT}`);
+        if (allowance < amount) {
+            console.warn(`[Billing] Insufficient allowance for ${userAddress}. Has: ${allowance}, Needs: ${amount}`);
             return { success: false, message: "Insufficient Allowance. User must approve Server." };
         }
 
         // 2. Check Balance
         const balance = await tokenContract.balanceOf(userAddress);
-        if (balance < FEE_AMOUNT) {
+        if (balance < amount) {
             console.warn(`[Billing] Insufficient balance for ${userAddress}. Has: ${balance}`);
             return { success: false, message: "Insufficient KWALA Balance." };
         }
 
         // 3. Execute Charge
         // transferFrom(user, treasury, fee)
-        const tx = await tokenContract.transferFrom(userAddress, TREASURY, FEE_AMOUNT);
+        const tx = await tokenContract.transferFrom(userAddress, TREASURY, amount);
         console.log(`[Billing] Charge TX sent: ${tx.hash}. Waiting for confirmation...`);
 
         // Wait for 1 confirmation for demo stability
