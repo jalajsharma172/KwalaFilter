@@ -18,7 +18,7 @@ function Router() {
       <Route path="/dashboard" component={EventListener} />
       <Route path="/workflow" component={Workflow} />
       
-      <Route path="/work" component={} />
+      
       <Route component={NotFound} />
     </Switch>
   );
