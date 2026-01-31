@@ -30,7 +30,7 @@ export default function InteractiveDemo() {
     }, []);
 
     return (
-        <section id="demo" className="py-24 bg-black relative">
+        <section id="demo" className="py-24 relative">
             <div className="container mx-auto px-4">
                 <div className="flex flex-col lg:flex-row items-center gap-12 max-w-6xl mx-auto">
 

@@ -536,7 +536,7 @@ export default function EventListener() {
             className="absolute right-0 top-0 bg-blue-600 hover:bg-blue-700"
             onClick={() => setShowYamlBuilder(true)}
           >
-            Workflow Builder
+            New Version
           </Button>
 
           <div className="flex items-center justify-center gap-2">

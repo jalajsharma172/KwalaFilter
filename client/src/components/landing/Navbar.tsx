@@ -63,7 +63,10 @@ export default function Navbar() {
         }),
         method: "function balanceOf(address) view returns (uint256)",
         params: [activeAccount?.address || "0x0000000000000000000000000000000000000000"],
-        queryOptions: { enabled: !!tokenAddress && !!activeAccount }
+        queryOptions: {
+            enabled: !!tokenAddress && !!activeAccount,
+            refetchInterval: 2000
+        }
     });
 
     // Read Allowance
@@ -78,7 +81,10 @@ export default function Navbar() {
             activeAccount?.address || "0x0000000000000000000000000000000000000000",
             serverWallet || "0x0000000000000000000000000000000000000000"
         ],
-        queryOptions: { enabled: !!tokenAddress && !!serverWallet && !!activeAccount }
+        queryOptions: {
+            enabled: !!tokenAddress && !!serverWallet && !!activeAccount,
+            refetchInterval: 2000
+        }
     });
 
     // Approval Transaction
@@ -229,11 +235,13 @@ export default function Navbar() {
     return (
         <nav className="fixed top-0 w-full z-50 border-b border-white/10 bg-black/50 backdrop-blur-md">
             <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <img src="/logo.jpg" alt="KwalaFilter Logo" className="h-8 w-8 object-contain" />
+                <div className="flex items-center gap-2 ml-10">
+                    <a href="/">
                     <span className="font-bold text-xl tracking-tight text-white">
                         Kwala<span className="text-indigo-500">Filter</span>
                     </span>
+
+                    </a>
                 </div>
 
                 <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-400">

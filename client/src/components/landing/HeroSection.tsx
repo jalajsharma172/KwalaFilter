@@ -5,7 +5,7 @@ import { ArrowRight, Zap } from "lucide-react";
 
 export default function HeroSection() {
     return (
-        <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-[#0a0a0a] pt-16">
+        <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
             {/* Background Effects */}
             <div className="absolute inset-0 overflow-hidden">
                 <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full bg-indigo-500/10 blur-[120px]" />
