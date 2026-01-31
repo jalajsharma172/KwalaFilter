@@ -72,12 +72,14 @@ graph TB
     subgraph "Frontend Layer"
         UI[React Dashboard]
         SSE[SSE Client]
+        Wallet[User Wallet]
     end
     
     subgraph "Backend Layer"
         API[Express API]
         Listener[Event Listener]
         Scheduler[Workflow Scheduler]
+        Billing[Billing Module]
     end
     
     subgraph "Data Layer"
@@ -89,23 +91,42 @@ graph TB
         RPC[RPC Provider]
         WS[WebSocket Provider]
         Etherscan[Etherscan API]
+        Token[KWALA Token Contract]
     end
     
-    UI -->|HTTP/SSE| API
+    subgraph "External Integration"
+        Webhook[Discord/Slack Webhook]
+        ExtAPI[External APIs]
+    end
+    
+    UI -->|HTTP Requests| API
+    UI -->|Connect| Wallet
+    Wallet -->|Sign Transactions| RPC
     SSE -->|Real-time Events| API
+    
     API --> Listener
     API --> Scheduler
+    API --> Billing
+    
     Listener -->|WebSocket| WS
     Listener -->|Fallback| RPC
-    Scheduler -->|Fetch Metadata| Etherscan
     Listener --> Cache
+    
+    Scheduler -->|Fetch Metadata| Etherscan
     Scheduler --> DB
+    Scheduler -->|Trigger| Webhook
+    Scheduler -->|Trigger| ExtAPI
+    
+    Billing -->|Charge Fee| Token
+    
     API --> DB
     
     style UI fill:#61dafb,stroke:#333,stroke-width:2px
     style API fill:#68a063,stroke:#333,stroke-width:2px
     style DB fill:#3ecf8e,stroke:#333,stroke-width:2px
     style WS fill:#627eea,stroke:#333,stroke-width:2px
+    style Token fill:#f1c40f,stroke:#333,stroke-width:2px
+    style Webhook fill:#e74c3c,stroke:#333,stroke-width:2px
 ```
 
 ---
