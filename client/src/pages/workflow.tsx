@@ -7,7 +7,10 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle, XCircle, Clock, Globe } from "lucide-react";
 
+import { useToast } from "@/hooks/use-toast";
+
 export default function Dashboard() {
+  const { toast } = useToast();
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [subscriptionBlocks, setSubscriptionBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -106,8 +109,36 @@ export default function Dashboard() {
           <Button variant="outline" className="border-gray-600">
             Docs
           </Button>
-          <Button variant="outline" className="border-gray-600">
-            Settings
+          <Button
+            variant="outline"
+            className="border-gray-600"
+            onClick={async () => {
+              try {
+                toast({ title: "Triggering Price Alerts...", description: "Processing..." });
+                const res = await fetch('/api/price-alerts');
+                const data = await res.json();
+                if (res.ok) {
+                  toast({
+                    title: "Success",
+                    description: `Processed Alerts. ETH Price: $${data.eth_data?.eth_usd}`,
+                  });
+                } else {
+                  toast({
+                    variant: "destructive",
+                    title: "Error",
+                    description: data.error || "Failed to trigger alerts",
+                  });
+                }
+              } catch (err) {
+                toast({
+                  variant: "destructive",
+                  title: "Error",
+                  description: "Network error occurred",
+                });
+              }
+            }}
+          >
+            Price Triggered
           </Button>
         </div>
       </header>

@@ -1,3 +1,4 @@
+/// <reference path="./declarations.d.ts" />
 import { exec } from 'child_process';
 import { getContractBlockNumber } from "./storage/getAllContractsBlockNumber.js";
 import { getContractLatestBlockNumber } from "./listeners/getBlockNumber.js";
@@ -6,15 +7,14 @@ import { max } from 'date-fns';
 import { config } from './config.js';
 import { chargeUser } from './billing.js';
 import { ethers } from "ethers";
+
 /**
  * Start running a script/command at a fixed interval.
  * Default interval: 3 minutes
  */
 
-
-
 // Replace ${re.event(n)} with decoded log values
-export function applyEventParams(input, decodedEvent) {
+export function applyEventParams(input: any, decodedEvent: any) {
   if (!input || typeof input !== "string") return input;
 
   return input.replace(/\$\{re\.event\((\d+)\)\}/g, (_, index) => {
@@ -25,19 +25,14 @@ export function applyEventParams(input, decodedEvent) {
   });
 }
 
-
-
-
 export function startScheduler(command = 'node server/CheckingLatestBlockNumber/blocknumber.js', intervalMs = config.SCHEDULER_INTERVAL_MS) {
+  console.log("!!! SCHEDULER STARTED !!!");
   console.log(`|  ${intervalMs}ms | -----------------------------------------------`);
 
   // Run immediately once
   runOnce();
 
   const id = setInterval(runOnce, intervalMs);
-
-
-
 
   async function runOnce() {
     console.log(`[${new Date().toISOString()}] Scheduler: executing command`);
@@ -57,7 +52,8 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
         const ActionName = item.ActionName;
         const ActionType = item.ActionType;
         const abi = item.abi;
-        console.log(contractAddress, previousBlock);
+        const Workflow_Name = item.Workflow_Name;
+        const Workflow_Owner = item.Workflow_Owner;
 
         console.log("Params are : ", params);
 
@@ -66,12 +62,10 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
             ? JSON.parse(params)
             : params || {};
 
-
         if (!contractAddress || !/^0x[a-fA-F0-9]{40}$/.test(contractAddress)) {
           console.log("❌ Invalid contract address format:", contractAddress);
           continue;
         }
-
 
         console.log(contractAddress, previousBlock, eventSignature);
         let maxBlockNumber: any = 0;
@@ -95,9 +89,8 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
 
         console.log(`Received ${contractAddress}: ${maxBlockNumber}`);
 
-
         if (maxBlockNumber === null) {
-          console.log(`Could not fetch block number for contract ${contractAddress}`);
+          console.log(`Could not fetch block number for ${contractAddress}`);
           continue;
         }
 
@@ -125,7 +118,6 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
               }
             } catch (decodeErr) {
               console.warn("⚠️ Failed to decode log with ABI:", decodeErr);
-              // Fallback: use raw data if possible, though likely useless for address
               decodedArgs = [maxBlockLog.data];
             }
           }
@@ -135,7 +127,6 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
             console.log("ABI : ", abi);
             console.log("Event Signature : ", eventSignature);
             console.log("Decoded Args : ", decodedArgs);
-
           } else {
             //Get Value
             const decodedData = {
@@ -144,18 +135,14 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
             }
 
             // Process the params with dynamic event replacement
-            const processedParams = {};
-
+            const processedParams: Record<string, any> = {};
             for (const key in paramsjson) {
               processedParams[key] = applyEventParams(paramsjson[key], decodedData);
             }
-
             console.log("Processed Params:", processedParams);
 
-
-
             let apicall = false;
-            //API call ho gayi
+            //API call
             try {
               const response = await fetch(api, {
                 method: "POST",
@@ -167,90 +154,62 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
               const result = await response.json().catch(() => null);
               console.log("📩 API Response:", result);
 
-              // BILLING INTEGRATION: Charge User if Action was Successful
+              // BILLING INTEGRATION
               if (response.ok) {
-                // Hackathon Heuristic: Assume 'user' address is available in params or use contractAddress
-                // Ideally, the event log should have a 'user' or 'from' argument.
-                // For now, we will try to find a 'user' or 'sender' in processedParams, 
-                // or default to charging the Contract Deployer (if that was the logic) 
-                // BUT for this specific request: "Charge 0.01 KWALA during action execution"
-
-                // We will look for an address in the decodedData.args to charge.
-                // If args[0] is an address, charge it.
-                let userToCharge = null;
-
-                if (decodedData.args && (decodedData.args as any[]).length > 0) {
-                  for (const arg of (decodedData.args as any[])) {
-                    if (typeof arg === 'string' && arg.startsWith('0x') && arg.length === 42) {
-                      userToCharge = arg;
-                      break;
-                    }
-                  }
+                // BILLING INTEGRATION: Charge Workflow Owner
+                if (Workflow_Owner) {
+                  const feeAmount = ethers.parseUnits("0.01", 18);
+                  console.log(`[Billing] Charging Workflow Owner: ${Workflow_Owner} amount: 0.01 KWALA...`);
+                  await chargeUser(Workflow_Owner, feeAmount);
+                } else {
+                  console.warn("[Billing] Workflow_Owner is missing, cannot charge.");
                 }
 
-                if (userToCharge) {
-                  // Determine fee from params or default
-                  let feeAmount: bigint | undefined;
-                  if (paramsjson && paramsjson.kwala_fee) {
-                    try {
-                      feeAmount = ethers.parseUnits(String(paramsjson.kwala_fee), 18);
-                    } catch (e) {
-                      console.warn("[Billing] Invalid kwala_fee in params, using default.");
-                    }
-                  }
+                //Update new blocknumber to the database ONLY if API call was successful
+                try {
+                  const updateBody = {
+                    latest_block_number: maxBlockNumber
+                  };
+                  const url = `${config.SUPABASE_URL.replace(/\/$/, '')}` + `/rest/v1/subscription_latest_blocks?address=eq.${contractAddress.toLowerCase()}&event_signature=eq.${eventSignature}&id=eq.${id}`;
+                  const resp2 = await fetch(url, {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+                      'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+                      'Prefer': 'return=representation',
+                    },
+                    body: JSON.stringify(updateBody),
+                  });
 
-                  console.log(`[Billing] Found user in event args: ${userToCharge}. Initiating charge...`);
-                  // Fire and forget (don't block the loop too long, but for demo maybe await is safer to show logs)
-                  await chargeUser(userToCharge, feeAmount);
-                } else {
-                  console.log("[Billing] No user address found in event args to charge. Skipping.");
+                  if (resp2.ok) {
+                    const data = await resp2.json();
+                    console.log(`✅ Database updated for ID ${id}. New Block: ${maxBlockNumber}`, data);
+                  } else {
+                    const errText = await resp2.text();
+                    console.error(`❌ Database update failed for ID ${id}. Status: ${resp2.status}`, errText);
+                  }
+                } catch (dbErr) {
+                  console.error("❌ Database update exception:", dbErr);
                 }
               }
-
             } catch (err) {
               apicall = false;
               console.error("❌ API Error:", err);
             }
 
-            //Update new blocknumber to the database subscription_latest_blocks
-            try {
-              const updateBody = {
-                latest_block_number: maxBlockNumber
-              };
 
-              const url = `${config.SUPABASE_URL.replace(/\/$/, '')}` + `/rest/v1/subscription_latest_blocks?address=eq.${contractAddress.toLowerCase()}&&event_signature=eq.${eventSignature}&&id=eq.${id}`;
-              const resp2 = await fetch(url, {
-                method: 'PATCH', // IMPORTANT: Use PATCH for update
-                headers: {
-                  'Content-Type': 'application/json',
-                  'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
-                  'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
-                  'Prefer': 'return=representation',
-                },
-                body: JSON.stringify(updateBody),
-              });
-              const json2 = await resp2.json().catch(() => null);
 
-              if (!resp2.ok) {
-                console.warn('❌❌❌❌❌❌Could not save latest block to Supabase', resp2.status, json2);
-              } else {
-                console.log('Saved latest block for', contractAddress, '->', data);
-              }
-            } catch (error) {
-              console.log("❌❌❌❌❌❌Unable to update latest block number in database:", error);
-
-            }
             if (apicall === true) {
               //save at database everything worked fine
               try {
                 const insertBody = {
                   ActionName: ActionName,
                   API_EndPoint: ActionType,
-                  ActionStatus: 200
+                  ActionStatus: 200,
+                  Workflow_Name: Workflow_Name
                 };
-
                 const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/Workflow`;
-
                 const resp = await fetch(sbUrl, {
                   method: 'POST',
                   headers: {
@@ -261,29 +220,22 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
                   },
                   body: JSON.stringify(insertBody),
                 });
-
                 const json = await resp.json();
-                if (!resp.ok) {
-                  console.error('Supabase insert error', json);
-                }
+                if (!resp.ok) console.error('Supabase insert error', json);
               } catch (error) {
                 console.error("Unable to insert workflow data:", error);
               }
             } else {
-              //show 404 error & Kitne times humne try kiya hai
+              //show 404 error
               try {
                 for (let i = 0; i < times; i++) {
-                  //Save it to the database.
-
                   try {
                     const insertBody = {
                       ActionName: ActionName,
                       ActionType: ActionType,
                       ActionStatus: 404
                     };
-
                     const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/Workflow`;
-
                     const resp = await fetch(sbUrl, {
                       method: 'POST',
                       headers: {
@@ -294,48 +246,28 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
                       },
                       body: JSON.stringify(insertBody),
                     });
-
                     const json = await resp.json();
-                    if (!resp.ok) {
-                      console.error('Supabase insert error', json);
-                    }
+                    if (!resp.ok) console.error('Supabase insert error', json);
                   } catch (error) {
                     console.error("Unable to insert workflow data:", error);
                   }
                 }
               } catch (error) {
                 console.log("Error is ", error);
-
               }
             }
-
-            console.log("Max Block Data is ", data);
-
-            console.log("--------------------------------------------------------------------------------------------------");
-            console.log("Call API CAll API  : ", api);
-            console.log("--------------------------------------------------------------------------------------------------");
-
-            console.log("Max Block Data is ", data);
           }
-
-
-
-
         } else {
           console.log(`No new block for ${contractAddress}. Current: ${maxBlockNumber}`);
         }
-      }
 
+        console.log("--------------------------------------------------------------------------------------------------");
+        console.log("Call API Wait : ", api);
+        console.log("--------------------------------------------------------------------------------------------------");
+      }
     } catch (error) {
       console.error(`[${new Date().toISOString()}] Scheduler error:`, error);
     }
-
-
-
-
-
-
-
   }
 
   return {
