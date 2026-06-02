@@ -51,7 +51,7 @@ export default function HeroSection() {
                         transition={{ duration: 0.5, delay: 0.3 }}
                         className="flex flex-col sm:flex-row items-center justify-center gap-4"
                     >
-                        <Link href="/dashboard">
+                        <Link href="/workflow">
                             <Button size="lg" className="h-12 px-8 text-lg bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-lg shadow-indigo-500/25">
                                 Start Listening Now
                                 <ArrowRight className="ml-2 w-5 h-5" />
