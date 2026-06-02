@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { CheckCircle, XCircle, Clock, Globe, Plus, FileText, Upload, ChevronRight, Activity, Zap } from "lucide-react";
+import { CheckCircle, XCircle, Clock, Globe, Plus, FileText, Upload, ChevronRight, Activity, Zap, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import Navbar from "@/components/landing/Navbar";
@@ -12,6 +12,7 @@ import Navbar from "@/components/landing/Navbar";
 export default function Dashboard() {
   const { toast } = useToast();
   const [workflows, setWorkflows] = useState<any[]>([]);
+  const [yamlWorkflows, setYamlWorkflows] = useState<any[]>([]);
   const [subscriptionBlocks, setSubscriptionBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +45,20 @@ export default function Dashboard() {
     };
   }, []);
 
+  // Fetch YAML workflows (top 3)
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/yaml')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!mounted) return;
+        const arr = Array.isArray(data) ? data : (data?.data ?? []);
+        setYamlWorkflows(arr.slice(0, 3));
+      })
+      .catch((err) => console.error('Failed to fetch yaml workflows:', err));
+    return () => { mounted = false; };
+  }, []);
+
   // Fetch subscription_latest_blocks for the list
   useEffect(() => {
     let mounted = true;
@@ -67,7 +82,8 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
 
   // Task 2: Dynamic stats based on status codes
-  const successfulActions = workflows.filter((w) => String(w.ActionStatus) === '200').length;
+  const successfulList = workflows.filter((w) => String(w.ActionStatus) === '200');
+  const successfulActions = successfulList.length;
   // User explicitly asked for counts with status code 404 for failed actions
   const failedActions = workflows.filter((w) => String(w.ActionStatus) === '404').length;
 
@@ -155,12 +171,12 @@ export default function Dashboard() {
         {/* STATS GRID */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
           {[
-            { label: "Successful Actions", value: successfulActions, sub: "Total Executions", icon: CheckCircle, color: "text-green-400", bg: "bg-green-500/5", border: "border-green-500/20" },
-            { label: "Failed Actions", value: failedActions, sub: "Total Errors", icon: XCircle, color: "text-red-400", bg: "bg-red-500/5", border: "border-red-500/20" },
+            { label: "Successful Actions", value: successfulActions, sub: "Total Executions", icon: CheckCircle, color: "text-green-400", bg: "bg-green-500/5", border: "border-green-500/20", onClick: () => setLocation('/successful-actions') },
+            { label: "Failed Actions", value: failedActions, sub: "Total Errors", icon: XCircle, color: "text-red-400", bg: "bg-red-500/5", border: "border-red-500/20", onClick: () => setLocation('/failed-actions') },
             { label: "Avg Execution Time", value: avgExecutionTime, sub: "Per Workflow", icon: Clock, color: "text-blue-400", bg: "bg-blue-500/5", border: "border-blue-500/20" },
             { label: "Chains Active", value: chainsUsed, sub: "Base, Sepolia", icon: Globe, color: "text-purple-400", bg: "bg-purple-500/5", border: "border-purple-500/20" },
           ].map((stat, i) => (
-            <Card key={i} className="bg-white/5 border-white/10 hover:border-white/20 transition-all duration-300 group">
+            <Card key={i} onClick={stat.onClick} className={cn("bg-white/5 border-white/10 hover:border-white/20 transition-all duration-300 group", stat.onClick && "cursor-pointer")}>
               <CardContent className="p-5 flex items-start justify-between">
                 <div>
                   <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">{stat.label}</p>
@@ -204,7 +220,7 @@ export default function Dashboard() {
             </Button>
             <Button
               className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2 shadow-lg shadow-indigo-500/20 transition-all font-medium"
-              onClick={() => setLocation('/dashboard')}
+              onClick={() => setLocation('/yaml-editor')}
             >
               <Plus className="w-4 h-4" /> New Workflow
             </Button>
@@ -212,7 +228,7 @@ export default function Dashboard() {
         </div>
 
         {/* WORKFLOW LIST */}
-        <div className="space-y-3">
+        <div className="space-y-6">
           {loading && (
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
@@ -225,59 +241,120 @@ export default function Dashboard() {
             </div>
           )}
 
-          {!loading && !error && workflows.length === 0 && (
+          {/* YAML Workflows - Top 3 */}
+          {yamlWorkflows.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-3">
+                <BookOpen className="w-4 h-4 text-indigo-400" />
+                <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">YAML Workflows</span>
+                <div className="flex-1 h-px bg-indigo-500/20"></div>
+                <span className="text-[10px] text-gray-500">{yamlWorkflows.length} of latest</span>
+              </div>
+              {yamlWorkflows.map((w, i) => (
+                <div
+                  key={w.id ?? i}
+                  onClick={() => setLocation(`/yaml/${w.id}`)}
+                  className="group relative overflow-hidden rounded-xl bg-indigo-500/5 border border-indigo-500/20 hover:border-indigo-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/10 cursor-pointer"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-indigo-500/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 pointer-events-none" />
+                  <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 rounded-lg bg-indigo-500/15 border border-indigo-500/30 group-hover:bg-indigo-500/25 transition-colors">
+                        <FileText className="w-5 h-5 text-indigo-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-semibold text-white group-hover:text-indigo-300 transition-colors">
+                          {w.WorkFlowName || 'Unnamed Workflow'}
+                        </h4>
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <span className="text-xs text-indigo-400/70 font-mono bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                            YAML Builder
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-8 md:pr-4">
+                      <div className="text-right">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Created</p>
+                        <p className="text-sm text-gray-300 font-mono">{w.created_at ? timeAgo(w.created_at) : 'Just now'}</p>
+                      </div>
+                      <div className="text-right hidden sm:block">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Status</p>
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
+                          <span className="text-sm text-green-400 font-medium">Active</span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-gray-600 group-hover:text-white transition-colors group-hover:translate-x-1" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Subscription Block Workflows */}
+          {subscriptionBlocks.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Activity className="w-4 h-4 text-purple-400" />
+                <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Event Workflows</span>
+                <div className="flex-1 h-px bg-purple-500/20"></div>
+                <span className="text-[10px] text-gray-500">{subscriptionBlocks.length} active</span>
+              </div>
+              {subscriptionBlocks.map((w, i) => (
+                <div
+                  key={w.id ?? i}
+                  className="group relative overflow-hidden rounded-xl bg-white/5 border border-white/10 hover:border-indigo-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/5 cursor-pointer"
+                  onClick={() => setLocation(`/workflow/${w.id}`)}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 pointer-events-none" />
+                  <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20 group-hover:bg-indigo-500/20 transition-colors">
+                        <FileText className="w-5 h-5 text-indigo-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-semibold text-white group-hover:text-indigo-300 transition-colors">
+                          {w.Workflow_Name || w.ActionName || 'Unnamed Workflow'}
+                        </h4>
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <span className="text-xs text-gray-500 font-mono bg-black/30 px-2 py-0.5 rounded border border-white/5">
+                            {w.times ? `Frequency: ${w.times}` : (w.event_signature ? 'Event Trigger' : 'Interval: 1h')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-8 md:pr-4">
+                      <div className="text-right">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Last Run</p>
+                        <p className="text-sm text-gray-300 font-mono">{w.created_at ? timeAgo(w.created_at) : 'Never'}</p>
+                      </div>
+                      <div className="text-right hidden sm:block">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Status</p>
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
+                          <span className="text-sm text-green-400 font-medium">Active</span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-gray-600 group-hover:text-white transition-colors group-hover:translate-x-1" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && !error && yamlWorkflows.length === 0 && subscriptionBlocks.length === 0 && (
             <div className="text-center py-20 rounded-xl border border-dashed border-white/10 bg-white/5">
               <Activity className="w-12 h-12 text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-white mb-2">No workflows yet</h3>
               <p className="text-gray-400 text-sm max-w-sm mx-auto mb-6">Get started by creating your first automation workflow or importing a configuration.</p>
-              <Button variant="outline" onClick={() => setLocation('/dashboard')} className="border-white/10 hover:bg-white/5">
+              <Button variant="outline" onClick={() => setLocation('/yaml-editor')} className="border-white/10 hover:bg-white/5">
                 Create Workflow
               </Button>
             </div>
           )}
-
-          {!loading && subscriptionBlocks.map((w, i) => (
-            <div
-              key={w.id ?? i}
-              className="group relative overflow-hidden rounded-xl bg-white/5 border border-white/10 hover:border-indigo-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/5 cursor-pointer"
-              onClick={() => setLocation(`/workflow/${w.id}`)}
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 pointer-events-none" />
-
-              <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20 group-hover:bg-indigo-500/20 transition-colors">
-                    <FileText className="w-5 h-5 text-indigo-400" />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-semibold text-white group-hover:text-indigo-300 transition-colors">
-                      {w.Workflow_Name || w.ActionName || 'Unnamed Workflow'}
-                    </h4>
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <span className="text-xs text-gray-500 font-mono bg-black/30 px-2 py-0.5 rounded border border-white/5">
-                        {w.times ? `Frequency: ${w.times}` : (w.event_signature ? 'Event Trigger' : 'Interval: 1h')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-8 md:pr-4">
-                  <div className="text-right">
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Last Run</p>
-                    <p className="text-sm text-gray-300 font-mono">{w.created_at ? timeAgo(w.created_at) : 'Never'}</p>
-                  </div>
-                  <div className="text-right hidden sm:block">
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Status</p>
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span>
-                      <span className="text-sm text-green-400 font-medium">Active</span>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-gray-600 group-hover:text-white transition-colors group-hover:translate-x-1" />
-                </div>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
 

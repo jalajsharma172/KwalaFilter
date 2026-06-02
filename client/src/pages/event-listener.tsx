@@ -16,6 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Activity, StopCircle, PlayCircle, ExternalLink, Zap, Database, Copy, Check, Settings, RefreshCw, Bell } from "lucide-react";
 import { YamlGenerator } from "@/components/YamlGenerator";
 import { motion } from "framer-motion";
+import { useActiveAccount } from "thirdweb/react";
 
 type StatusType = 'idle' | 'connecting' | 'listening' | 'catching-up' | 'error';
 //Ready to start listening - Ye Workflow ki baat ho rahi hai
@@ -26,6 +27,7 @@ interface LogEntry {
 }
 
 export default function EventListener() {
+  const activeAccount = useActiveAccount();
   const [showYamlBuilder, setShowYamlBuilder] = useState(true);
   const [logs, setLogs] = useState<LogEntry[]>([]);//Workflow[]
   const [status, setStatus] = useState<StatusType>('idle');//Status of workflow
@@ -67,6 +69,7 @@ export default function EventListener() {
   const [notifUrl, setNotifUrl] = useState('https://workflow-notification-test.kalp.network/push_notification');
   const [notifBody, setNotifBody] = useState(''); // Renamed/New state for Body
   const [workflowName, setWorkflowName] = useState(''); // New state for Workflow Name
+  const [workflowOwner, setWorkflowOwner] = useState(''); // New state for Workflow Owner
 
 
 
@@ -79,6 +82,14 @@ export default function EventListener() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (activeAccount?.address) {
+      setWorkflowOwner(activeAccount.address);
+    } else {
+      setWorkflowOwner('');
+    }
+  }, [activeAccount]);
 
   const handleStartListening = async (e: React.FormEvent) => {
     console.log("HandlestartListening");
@@ -359,7 +370,8 @@ export default function EventListener() {
           ActionType: actionType,
           TargetFunction: targetFunction,
           TargetFunctionParameters: targetParams,
-          TargetContract: targetContract
+          TargetContract: targetContract,
+          Workflow_Owner: workflowOwner
         }),
       });
 
@@ -689,6 +701,21 @@ export default function EventListener() {
                         )}
                         <p className="text-xs text-muted-foreground">
                           Start monitoring from this block height.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="workflowOwner">Workflow Owner (Wallet Address)</Label>
+                        <Input
+                          id="workflowOwner"
+                          data-testid="input-workflow-owner"
+                          placeholder="0x... (Connect wallet first)"
+                          value={workflowOwner}
+                          readOnly
+                          className="font-mono text-xs bg-muted/50 cursor-not-allowed"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Wallet address that owns this workflow (for billing).
                         </p>
                       </div>
 

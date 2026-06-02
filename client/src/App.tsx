@@ -11,7 +11,11 @@ import Workflow from "@/pages/workflow";
 import WorkflowDetail from "@/pages/workflow-detail";
 import { KeepAlive } from "@/components/KeepAlive";
 import Dashboard from "./pages/entry";
-// import SuccessfulActions from "@/pages/successful-actions";
+import SuccessfulActions from "@/pages/SuccessfulActions";
+import FailedActions from "@/pages/FailedActions";
+import YamlEditor from "@/pages/yaml-editor";
+import YamlDetail from "@/pages/yaml-detail";
+
 function Router() {
   return (
     <Switch>
@@ -20,6 +24,10 @@ function Router() {
       <Route path="/dashboard" component={EventListener} />
       <Route path="/workflow" component={Workflow} />
       <Route path="/workflow/:id" component={WorkflowDetail} />
+      <Route path="/yaml-editor" component={YamlEditor} />
+      <Route path="/yaml/:id" component={YamlDetail} />
+      <Route path="/successful-actions" component={SuccessfulActions} />
+      <Route path="/failed-actions" component={FailedActions} />
 
       {/* <Route path="/work" component={} /> */}
 

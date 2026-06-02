@@ -54,6 +54,9 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
         const abi = item.abi;
         const Workflow_Name = item.Workflow_Name;
         const Workflow_Owner = item.Workflow_Owner;
+        const TargetContract = item.TargetContract;
+        const TargetFunction = item.TargetFunction;
+        const TargetFunctionParameters = item.TargetFunctionParameters;
 
         console.log("Params are : ", params);
 
@@ -127,6 +130,114 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
             console.log("ABI : ", abi);
             console.log("Event Signature : ", eventSignature);
             console.log("Decoded Args : ", decodedArgs);
+
+            try {
+              if (!TargetContract || !TargetFunction) {
+                console.error("❌ TargetContract or TargetFunction missing for CALL action.");
+              } else {
+                const privateKey = process.env.ETH_PRIVATE_KEY;
+                if (!privateKey) {
+                  console.error("❌ ETH_PRIVATE_KEY missing in environment variables. Cannot execute smart contract call.");
+                } else {
+                  const rpcUrl = process.env.RPC_URL || "https://rpc.sepolia.org"; // Using default or env RPC
+                  const provider = new ethers.JsonRpcProvider(rpcUrl);
+                  const wallet = new ethers.Wallet(privateKey, provider);
+
+                  // Apply parameters formatting
+                  const decodedData = {
+                    event: eventSignature,
+                    args: decodedArgs
+                  };
+
+                  let finalParams: any[] = [];
+                  if (TargetFunctionParameters) {
+                    try {
+                      // TargetFunctionParameters might be a JSON array string
+                      const parsedParams = typeof TargetFunctionParameters === "string"
+                        ? JSON.parse(TargetFunctionParameters)
+                        : TargetFunctionParameters;
+
+                      if (Array.isArray(parsedParams)) {
+                        finalParams = parsedParams.map((param: any) => applyEventParams(param, decodedData));
+                      } else {
+                        // If it's a single value or object
+                        finalParams = [applyEventParams(parsedParams, decodedData)];
+                      }
+                    } catch (e) {
+                      console.warn("⚠️ TargetFunctionParameters is not valid JSON array, using as single string.", e);
+                      finalParams = [applyEventParams(TargetFunctionParameters, decodedData)];
+                    }
+                  }
+
+                  console.log(`🚀 Executing Smart Contract Call: ${TargetContract}.${TargetFunction} with params:`, finalParams);
+
+                  // Initialize target contract
+                  let targetAbi = typeof abi === 'string' ? JSON.parse(abi) : abi;
+                  const targetContractInstance = new ethers.Contract(TargetContract, targetAbi, wallet);
+
+                  if (typeof targetContractInstance[TargetFunction] !== 'function') {
+                    console.error(`❌ Function ${TargetFunction} not found in ABI for contract ${TargetContract}.`);
+                  } else {
+                    const tx = await targetContractInstance[TargetFunction](...finalParams);
+                    console.log(`⏳ Transaction sent! Hash: ${tx.hash}`);
+
+                    const receipt = await tx.wait();
+                    console.log(`✅ Transaction confirmed in block: ${receipt.blockNumber}`);
+
+                    // BILLING INTEGRATION: Charge Workflow Owner
+                    if (Workflow_Owner) {
+                      const feeAmount = ethers.parseUnits("0.01", 18);
+                      console.log(`[Billing] Charging Workflow Owner: ${Workflow_Owner} amount: 0.01 KWALA...`);
+                      await chargeUser(Workflow_Owner, feeAmount);
+                    }
+
+                    // Update database new blocknumber
+                    try {
+                      const updateBody = { latest_block_number: maxBlockNumber };
+                      const url = `${config.SUPABASE_URL.replace(/\/$/, '')}` + `/rest/v1/subscription_latest_blocks?id=eq.${id}`;
+                      const resp2 = await fetch(url, {
+                        method: 'PATCH',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+                          'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+                          'Prefer': 'return=representation',
+                        },
+                        body: JSON.stringify(updateBody),
+                      });
+                      if (resp2.ok) console.log(`✅ Database updated for ID ${id}. New Block: ${maxBlockNumber}`);
+                    } catch (dbErr) {
+                      console.error("❌ Database update exception:", dbErr);
+                    }
+
+                    // Save success to Workflow table
+                    try {
+                      const insertBody = {
+                        ActionName: ActionName,
+                        API_EndPoint: ActionType,
+                        ActionStatus: 200,
+                        Workflow_Name: Workflow_Name
+                      };
+                      const sbUrl = `${config.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/Workflow`;
+                      await fetch(sbUrl, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'apikey': config.SUPABASE_SERVICE_ROLE_KEY,
+                          'Authorization': `Bearer ${config.SUPABASE_SERVICE_ROLE_KEY}`,
+                          'Prefer': 'return=representation',
+                        },
+                        body: JSON.stringify(insertBody),
+                      });
+                    } catch (error) {
+                      console.error("Unable to insert workflow data:", error);
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("❌ Smart Contract CALL Error:", err);
+            }
           } else {
             //Get Value
             const decodedData = {
@@ -154,6 +265,41 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
               const result = await response.json().catch(() => null);
               console.log("📩 API Response:", result);
 
+              // PassValue Workflow specific logic
+              if (contractAddress === '0x35cC1d514072483656c54b77ec615636664eB025') {
+                const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+                const telegramUrl = 'https://api.telegram.org/bot8572505255:AAEANxMBM4tk1yBcxOo7s9Y4Xphpvb2DXHQ/sendMessage';
+
+                const sendTelegramMsg = async (prefix: string) => {
+                  try {
+                    const textContent = `${prefix} :  ${applyEventParams('${re.event(0)}', decodedData)} `;
+                    await fetch(telegramUrl, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        text: textContent,
+                        chat_id: "7074622623"
+                      })
+                    });
+                    console.log(`✅ Sent Telegram msg: ${textContent}`);
+                  } catch (e) {
+                    console.error("❌ Telegram API Error:", e);
+                  }
+                };
+
+                console.log("⏳ PassValue Workflow: Waiting 3 seconds for F2...");
+                await sleep(3000);
+                await sendTelegramMsg("F2");
+
+                console.log("⏳ PassValue Workflow: Waiting 3 seconds for F3...");
+                await sleep(3000);
+                await sendTelegramMsg("F3");
+
+                console.log("⏳ PassValue Workflow: Waiting 3 seconds for F4...");
+                await sleep(3000);
+                await sendTelegramMsg("F4");
+              }
+
               // BILLING INTEGRATION
               if (response.ok) {
                 // BILLING INTEGRATION: Charge Workflow Owner
@@ -170,7 +316,7 @@ export function startScheduler(command = 'node server/CheckingLatestBlockNumber/
                   const updateBody = {
                     latest_block_number: maxBlockNumber
                   };
-                  const url = `${config.SUPABASE_URL.replace(/\/$/, '')}` + `/rest/v1/subscription_latest_blocks?address=eq.${contractAddress.toLowerCase()}&event_signature=eq.${eventSignature}&id=eq.${id}`;
+                  const url = `${config.SUPABASE_URL.replace(/\/$/, '')}` + `/rest/v1/subscription_latest_blocks?id=eq.${id}`;
                   const resp2 = await fetch(url, {
                     method: 'PATCH',
                     headers: {

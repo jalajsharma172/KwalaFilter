@@ -68,65 +68,56 @@
 ## 🏗️ Architecture
 
 ```mermaid
-graph TB
-    subgraph "Frontend Layer"
-        UI[React Dashboard]
-        SSE[SSE Client]
-        Wallet[User Wallet]
+graph TD
+    %% Define styles for different node types
+    classDef userStyle fill:#1c3a5e,stroke:#3a7bd5,stroke-width:2px,color:white,rx:10,ry:10;
+    classDef clientStyle fill:#1c3a5e,stroke:#3a7bd5,stroke-width:2px,color:white,rx:5,ry:5;
+    classDef serverStyle fill:#1c3a5e,stroke:#3a7bd5,stroke-width:2px,color:white,rx:5,ry:5;
+    classDef internalServerStyle fill:#244b7a,stroke:#3a7bd5,stroke-width:2px,color:white,rx:5,ry:5;
+    classDef blockchainStyle fill:#1c3a5e,stroke:#3a7bd5,stroke-width:2px,color:white;
+    classDef databaseStyle fill:#1c3a5e,stroke:#3a7bd5,stroke-width:2px,color:white,shape:cylinder;
+    classDef webhookStyle fill:#1c3a5e,stroke:#3a7bd5,stroke-width:2px,color:white;
+    classDef titleStyle fill:none,stroke:none,color:white,font-size:24px,font-weight:bold;
+
+    %% Title node
+    Title(KwanaFilter System):::titleStyle
+
+    %% Main Nodes
+    User(USER):::userStyle
+    Client(CLIENT<br>React Frontend):::clientStyle
+
+    subgraph Server_Box[SERVER<br>Node.js, Express, Ethers.js]
+        Scheduler(Scheduler<br>Cron Heartbeat):::internalServerStyle
+        LogListener(Log Listener<br>SSE Engine):::internalServerStyle
+        BillingModule(Billing Module):::internalServerStyle
     end
-    
-    subgraph "Backend Layer"
-        API[Express API]
-        Listener[Event Listener]
-        Scheduler[Workflow Scheduler]
-        Billing[Billing Module]
-    end
-    
-    subgraph "Data Layer"
-        DB[(Supabase DB)]
-        Cache[In-Memory Store]
-    end
-    
-    subgraph "Blockchain Layer"
-        RPC[RPC Provider]
-        WS[WebSocket Provider]
-        Etherscan[Etherscan API]
-        Token[KWALA Token Contract]
-    end
-    
-    subgraph "External Integration"
-        Webhook[Discord/Slack Webhook]
-        ExtAPI[External APIs]
-    end
-    
-    UI -->|HTTP Requests| API
-    UI -->|Connect| Wallet
-    Wallet -->|Sign Transactions| RPC
-    SSE -->|Real-time Events| API
-    
-    API --> Listener
-    API --> Scheduler
-    API --> Billing
-    
-    Listener -->|WebSocket| WS
-    Listener -->|Fallback| RPC
-    Listener --> Cache
-    
-    Scheduler -->|Fetch Metadata| Etherscan
-    Scheduler --> DB
-    Scheduler -->|Trigger| Webhook
-    Scheduler -->|Trigger| ExtAPI
-    
-    Billing -->|Charge Fee| Token
-    
-    API --> DB
-    
-    style UI fill:#61dafb,stroke:#333,stroke-width:2px
-    style API fill:#68a063,stroke:#333,stroke-width:2px
-    style DB fill:#3ecf8e,stroke:#333,stroke-width:2px
-    style WS fill:#627eea,stroke:#333,stroke-width:2px
-    style Token fill:#f1c40f,stroke:#333,stroke-width:2px
-    style Webhook fill:#e74c3c,stroke:#333,stroke-width:2px
+
+    Blockchain(BLOCKCHAIN<br>EVM RPC Provider):::blockchainStyle
+    Supabase[(SUPABASE<br>PostgreSQL DB)]:::databaseStyle
+    Webhooks(EXTERNAL<br>WEBHOOKS):::webhookStyle
+
+    %% Connections and Relationships
+    User --> Client
+    Client --> LogListener
+    LogListener -- "Pushes<br>Live Updates" --> Client
+
+    Scheduler -- "Polls Events" --> Blockchain
+    Blockchain --> Scheduler
+
+    Scheduler -- "Triggers" --> LogListener
+    Scheduler -- "Triggers" --> BillingModule
+
+    Scheduler -- "Scheduler" --> Supabase
+    Supabase -- "Reads/Writes State" --> Scheduler
+
+    BillingModule -- "Executes Tx" --> Webhooks
+
+    %% Apply styles to the subgraph boundary
+    style Server_Box fill:none,stroke:#3a7bd5,stroke-width:2px,color:white,rx:10,ry:10
+
+    %% Link the title to the main flow for placement
+    Title --- Server_Box
+    linkStyle 10 stroke:none;
 ```
 
 ---
